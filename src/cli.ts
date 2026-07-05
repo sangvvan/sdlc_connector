@@ -7,9 +7,9 @@ import { loadConfig, type ConnectorConfig } from './config.js';
 import { preflight, hasErrors } from './preflight.js';
 import { buildInputYaml, writeInputFile } from './forward/inputgen.js';
 import { invokeSystemB } from './forward/invoke.js';
-import { locateNewestReport } from './collect/locate.js';
+import { locateNewReports, locateNewestReport, resolveReportsDir } from './collect/locate.js';
 import { parseReport } from './collect/parse.js';
-import type { RunResult } from './collect/model.js';
+import type { Failure, RunResult } from './collect/model.js';
 import { buildBugFile, type ProposedBug } from './writeback/bugmap.js';
 import { nextBugNumber, existingSourceKeys } from './writeback/numbering.js';
 import { buildBacklogAppendix, appendToBacklog } from './writeback/backlog.js';
@@ -38,6 +38,32 @@ function runPreflightOrDie(config: ConnectorConfig): void {
   }
 }
 
+/**
+ * Merge failures from several reports (one per role) into one proposal
+ * set. Failures sharing a sourceKey across roles collapse into one bug —
+ * the same broken scenario seen by two roles is one defect, not two.
+ */
+function mergeFailures(runs: RunResult[]): Failure[] {
+  const seen = new Set<string>();
+  const merged: Failure[] = [];
+  for (const run of runs) {
+    for (const f of run.failures) {
+      if (seen.has(f.sourceKey)) continue;
+      seen.add(f.sourceKey);
+      merged.push(f);
+    }
+  }
+  return merged;
+}
+
+function reportLine(run: RunResult): void {
+  ok(
+    `Report: ${run.reportPath} — ${run.totals.total} total, ` +
+      `${run.totals.passed} passed, ${run.totals.failed} failed`,
+  );
+  for (const w of run.warnings) warn(`parser: ${w}`);
+}
+
 interface WritebackOutcome {
   written: ProposedBug[];
   skippedDuplicates: number;
@@ -45,23 +71,24 @@ interface WritebackOutcome {
 }
 
 /**
- * Propose BUG files + backlog candidates for the run's failures, behind
- * the human gate. Idempotent: failures whose source key already exists in
+ * Propose BUG files + backlog candidates for the failures, behind the
+ * human gate. Idempotent: failures whose source key already exists in
  * docs/bugs/ are skipped (F11). Nothing is written before approval.
  */
 async function proposeAndWriteback(
   config: ConnectorConfig,
-  run: RunResult,
+  failures: Failure[],
+  runLabel: string,
   yes: boolean,
 ): Promise<WritebackOutcome> {
   const bugsDir = join(config.systemA.repoPath, config.systemA.bugsDir);
   const known = existingSourceKeys(bugsDir);
 
-  const fresh = run.failures.filter((f) => !known.has(f.sourceKey));
-  const skippedDuplicates = run.failures.length - fresh.length;
+  const fresh = failures.filter((f) => !known.has(f.sourceKey));
+  const skippedDuplicates = failures.length - fresh.length;
 
   let n = nextBugNumber(bugsDir);
-  const proposed = fresh.map((f) => buildBugFile(f, n++, run.runId));
+  const proposed = fresh.map((f) => buildBugFile(f, n++));
 
   const approved = await confirmWriteback(proposed, skippedDuplicates, yes);
   if (!approved || proposed.length === 0) {
@@ -81,15 +108,11 @@ async function proposeAndWriteback(
   }
   if (written.length > 0) {
     const backlogFile = join(config.systemA.repoPath, config.systemA.backlogFile);
-    appendToBacklog(backlogFile, buildBacklogAppendix(written, run.runId));
+    appendToBacklog(backlogFile, buildBacklogAppendix(written, runLabel));
     ok(`${written.length} BUG files created in ${config.systemA.bugsDir}/`);
     ok(`${written.length} candidates appended to ${config.systemA.backlogFile}`);
   }
   return { written, skippedDuplicates, approved };
-}
-
-function reportWarnings(run: RunResult): void {
-  for (const w of run.warnings) warn(`parser: ${w}`);
 }
 
 const program = new Command();
@@ -128,36 +151,38 @@ program
       cmd(invoke.command);
 
       banner(3, 4, 'Thu kết quả');
-      const run = await summary.time('collect', () => {
-        const reportPath = locateNewestReport(config, runStartedAt);
-        if (!reportPath) {
-          // OQ-2 resolution: exit code alone doesn't decide — a missing
-          // report is what distinguishes "could not run" from "ran with
-          // failures" (failures are the payload, not an error).
+      const runs = await summary.time('collect', () => {
+        // System B exit codes (lib/cli/commands/workflow.ts): 0 = all
+        // passed, 1 = ran with test failures (normal — failures are the
+        // payload), 2 = orchestration error. One report per role is
+        // written to {reportsDir}/json/{runId}.json.
+        const reportPaths = locateNewReports(config, runStartedAt);
+        if (reportPaths.length === 0) {
           throw new Error(
             `System B exited with code ${invoke.exitCode} and no new report appeared under ` +
-              `${join(config.systemB.repoPath, config.systemB.reportsDir)} — infrastructure error.`,
+              `${resolveReportsDir(config)} — infrastructure error, nothing to collect.`,
           );
         }
-        return parseReport(reportPath);
+        if (invoke.exitCode === 2) {
+          warn('System B reported an orchestration error (exit 2) — collecting partial results.');
+        }
+        return reportPaths.map((p) => parseReport(p));
       });
-      ok(
-        `Report: ${run.reportPath} — ${run.totals.total} total, ` +
-          `${run.totals.passed} passed, ${run.totals.failed} failed`,
-      );
-      reportWarnings(run);
+      for (const run of runs) reportLine(run);
 
       banner(4, 4, 'Đề xuất ghi ngược về SDLC docs');
+      const failures = mergeFailures(runs);
+      const runLabel = runs.map((r) => r.runId).join(', ');
       const outcome = await summary.time('write-back', () =>
-        proposeAndWriteback(config, run, opts.yes),
+        proposeAndWriteback(config, failures, runLabel, opts.yes),
       );
-      if (!outcome.approved && run.failures.length > 0) {
+      if (!outcome.approved && failures.length > 0) {
         console.log(pc.dim('Write-back declined — System A docs untouched.'));
       }
 
       const summaryPath = summary.write(config.summaryDir, {
-        runId: run.runId,
-        totals: run.totals,
+        runIds: runs.map((r) => r.runId),
+        totals: runs.map((r) => r.totals),
         bugsWritten: outcome.written.map((b) => b.fileName),
         skippedDuplicates: outcome.skippedDuplicates,
       });
@@ -200,7 +225,7 @@ program
     const reportPath = opts.report ?? locateNewestReport(config);
     if (!reportPath) {
       fail(
-        `No report found under ${join(config.systemB.repoPath, config.systemB.reportsDir)} — ` +
+        `No report found under ${resolveReportsDir(config)} — ` +
           `run System B first or pass --report <path>.`,
       );
       process.exit(1);
@@ -208,14 +233,10 @@ program
 
     banner(1, 2, 'Thu kết quả');
     const run = parseReport(reportPath);
-    ok(
-      `Report: ${run.reportPath} — ${run.totals.total} total, ` +
-        `${run.totals.passed} passed, ${run.totals.failed} failed`,
-    );
-    reportWarnings(run);
+    reportLine(run);
 
     banner(2, 2, 'Đề xuất ghi ngược về SDLC docs');
-    await proposeAndWriteback(config, run, opts.yes);
+    await proposeAndWriteback(config, run.failures, run.runId, opts.yes);
   });
 
 program.parseAsync().catch((e: unknown) => {

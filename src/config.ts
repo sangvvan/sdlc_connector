@@ -5,8 +5,10 @@ import { z } from 'zod';
 
 const roleSchema = z.object({
   name: z.string().min(1),
-  // Relative to System B's repo root; must already exist (preflight checks).
-  authRecipe: z.string().min(1),
+  // Relative to System B's repo root; must exist when set (preflight
+  // checks). Optional — System B can auto-bootstrap an auth recipe by
+  // detecting the login form (lib/workflow/bootstrap.ts).
+  authRecipe: z.string().min(1).optional(),
 });
 
 const configSchema = z.object({
@@ -25,6 +27,7 @@ const configSchema = z.object({
   // System B understands works without a connector code change.
   crawl: z.record(z.unknown()).default({ maxPages: 50, maxDepth: 3 }),
   generation: z.record(z.unknown()).default({}),
+  run: z.record(z.unknown()).default({}),
   summaryDir: z.string().default('runs'),
 });
 

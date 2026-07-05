@@ -6,7 +6,7 @@ import type { ProposedBug } from './bugmap.js';
  * One block per connector run, clearly marked as machine-appended so the
  * next `/planning` in System A can triage them.
  */
-export function buildBacklogAppendix(bugs: ProposedBug[], runId: string): string {
+export function buildBacklogAppendix(bugs: ProposedBug[], runLabel: string): string {
   const today = new Date().toISOString().slice(0, 10);
   const lines = bugs.map(
     (b) =>
@@ -14,8 +14,8 @@ export function buildBacklogAppendix(bugs: ProposedBug[], runId: string): string
       `(${b.failure.priority}, ${b.failure.severity}) — from ai-test scenario \`${b.failure.scenarioId}\``,
   );
   return `
-<!-- appended by sdlc-connector on ${today}, ai-test run ${runId} -->
-### Candidates from AI system test (${runId})
+<!-- appended by sdlc-connector on ${today}, ai-test run ${runLabel} -->
+### Candidates from AI system test (${runLabel})
 
 ${lines.join('\n')}
 `;

@@ -9,11 +9,11 @@ const run = parseReport(FIXTURE);
 const failure = run.failures.find((f) => f.scenarioId === 'NF-SEC-001')!;
 
 describe('buildBugFile', () => {
-  const bug = buildBugFile(failure, 7, run.runId);
+  const bug = buildBugFile(failure, 7);
 
   it('names and numbers the file BUG-{n}.md, zero-padded', () => {
     expect(bug.fileName).toBe('BUG-007.md');
-    expect(bug.content).toContain('# BUG-007: Validate email input against SQL injection payload');
+    expect(bug.content).toContain('# BUG-007 - Validate email input against SQL injection payload');
   });
 
   it('embeds the machine-readable source key for idempotency', () => {
@@ -23,11 +23,22 @@ describe('buildBugFile', () => {
     );
   });
 
-  it('follows the minimal System A bug structure', () => {
-    expect(bug.content).toContain('- **Severity**: high');
-    expect(bug.content).toContain('- **Priority**: P1');
-    expect(bug.content).toContain('- **Status**: open');
+  it("follows System A's real BUG frontmatter format (docs/bugs/BUG-001.md)", () => {
+    expect(bug.content.startsWith('---\n')).toBe(true);
+    expect(bug.content).toContain('id: BUG-007');
+    expect(bug.content).toContain('title: "Validate email input against SQL injection payload"');
+    expect(bug.content).toContain('severity: high');
+    expect(bug.content).toContain('status: open');
+    expect(bug.content).toMatch(/created_at: \d{4}-\d{2}-\d{2}/);
+    expect(bug.content).toContain('traces_to: []');
+    expect(bug.content).toContain('owner: QA');
+  });
+
+  it('carries run id, role, page and sections in the body', () => {
     expect(bug.content).toContain(`ai-test run \`${run.runId}\``);
+    expect(bug.content).toContain('role `admin`');
+    expect(bug.content).toContain('http://localhost:3000/auth/login');
+    expect(bug.content).toContain('## Summary');
     expect(bug.content).toContain('## Steps to reproduce');
     expect(bug.content).toContain('## Expected');
     expect(bug.content).toContain('Invalid credentials');
@@ -42,7 +53,7 @@ describe('buildBugFile', () => {
 });
 
 describe('buildBacklogAppendix', () => {
-  const bugs = [buildBugFile(failure, 7, run.runId)];
+  const bugs = [buildBugFile(failure, 7)];
   const appendix = buildBacklogAppendix(bugs, run.runId);
 
   it('marks the block as machine-appended with the run id', () => {

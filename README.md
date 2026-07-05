@@ -42,11 +42,13 @@ systemB:
   reportsDir: reports                   # default
 roles:
   - name: admin
-    authRecipe: inputs/auth/admin.yaml  # relative to System B repo
+    authRecipe: inputs/auth/localhost-admin.yaml  # relative to System B repo
+  - name: competence   # no authRecipe → System B auto-bootstraps one
 crawl:          # passed through verbatim into the generated input YAML
   maxPages: 50
   maxDepth: 3
 generation: {}  # passed through verbatim
+run: {}         # passed through verbatim (testLevel, browsers, nonFunctional…)
 summaryDir: runs
 ```
 
@@ -97,10 +99,10 @@ npm run lint
 run (`R-20260530-143223-bbc6`, 44 scenarios, 25 failed) — the parser is
 coded against it, not an invented schema.
 
-## Assumptions about System A / System B
+## Assumptions & facts verified against System A / System B source
 
-Documented per PROBLEM_STATEMENT §7 — verify before pointing at new
-versions of either repo:
+Documented per PROBLEM_STATEMENT §7. Items marked **[verified]** were
+checked directly against both repos' source code:
 
 1. **Report pass/fail is keyed on `validation.status`, not
    `result.status`.** In the captured report, `totals.failed = 25` matches
@@ -112,30 +114,40 @@ versions of either repo:
    even carry two different AI-generated scenarios (e.g. `EP-001` twice
    on `/` with different titles). The connector therefore uses
    `scenarioId|pageUrl|title` as the failure identity for idempotency.
-3. **Role is per-report, not per-scenario.** It is parsed from the
-   report's `app` field (`"project:x role:y"`). If absent, bugs show
-   `Role: n/a` and the parser emits a warning.
-4. **Report files live at the top level of `reports/`** as `*.json`;
-   subdirectories (`reports/evidence/`, `reports/test-plans/`) are
-   ignored when locating the newest report.
-5. **Exit-code semantics (OQ-2)**: System B's exit code is not trusted to
-   distinguish "tests failed" from "crashed". Instead: if a new report
-   file appeared after the workflow started, the run counts as successful
-   (failures are the payload); if none appeared, it's an infrastructure
-   error and the chain stops.
-6. **Input YAML shape** (`project`, `baseUrl`, `roles[].name`,
-   `roles[].authRecipe`, `crawl`, `generation`) follows System B's
-   documented `inputs/projects/{project}.yaml` contract. The `crawl` and
-   `generation` blocks are passed through from connector config verbatim,
-   so any additional keys System B accepts can be configured without code
+3. **[verified] One report per role.** The workflow command runs each role
+   as its own run and writes `{reportsDir}/json/{runId}.json` per role
+   (`lib/reporter/json.ts`), plus an aggregate under
+   `{reportsDir}/workflows/`. The connector collects **all** reports newer
+   than the workflow start, parses each, and merges failures (a failure
+   seen by several roles becomes one bug). Role is parsed from each
+   report's `app` field (`"project:x role:y"`).
+4. **[verified] Reports dir resolution.** System B's own
+   `configs/framework.config.yaml` (`reportsDir`, default `reports`) is
+   read (read-only) to find the reports dir; the connector config value is
+   the fallback. `reports/json/` is scanned first, then the reports root;
+   `evidence/`, `test-plans/`, `workflows/` subdirs are ignored.
+5. **[verified] Exit-code semantics (OQ-2 resolved).**
+   `lib/cli/commands/workflow.ts` returns 0 = all passed, 1 = ran with
+   test failures, 2 = orchestration error. The connector treats 0 and 1
+   as successful runs (failures are the payload). Exit 2 with reports
+   present → partial results are collected with a warning; no reports at
+   all → infrastructure error, chain stops.
+6. **[verified] Input YAML shape** matches System B's `WorkflowInput` zod
+   schema (`lib/workflow/config.ts`): `project`, `baseUrl`, `roles[].name`
+   (+ optional `authRecipe` — when omitted System B auto-detects the login
+   form and bootstraps a recipe), `crawl`, `generation`, `run`. The
+   `crawl`/`generation`/`run` blocks are passed through from connector
+   config verbatim, so any key System B accepts works without code
    changes.
-7. **System A bug format (OQ-4)**: no `BUG-*.md` examples existed in the
-   template at development time, so bugs use the minimal structure from
-   PROBLEM_STATEMENT §7 (title, severity, steps, expected/actual,
-   source line). Numbering is treated as global, not per-sprint.
-8. **`docs/bugs/` and `docs/sprints/` must already exist** in System A
-   (preflight verifies); `backlog.md` itself is created with a header if
-   missing.
+7. **[verified] System A bug format (OQ-4)** follows the real
+   `docs/bugs/BUG-001.md` in the template: YAML frontmatter (`id`,
+   `title`, `severity`, `status`, `created_at`, `traces_to`, `owner`) +
+   `# BUG-{n} - Title` + Summary/Steps/Expected/Actual/Evidence sections.
+   Numbering is global (single `docs/bugs/` dir, no per-sprint scheme).
+8. **[verified] `docs/sprints/backlog.md` is System A's backlog
+   convention** (`.agent/skills/core/scrum.md`), though the file may not
+   exist yet in a fresh template — the connector creates it with a header
+   when missing, and only ever appends.
 
 ## Acceptance criteria status (PROBLEM_STATEMENT §8)
 

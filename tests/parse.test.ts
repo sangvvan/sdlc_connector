@@ -41,6 +41,10 @@ describe('parseReport (against real captured report)', () => {
     expect(run.failures[0]!.role).toBe('admin');
   });
 
+  it('stamps each failure with the report run id', () => {
+    expect(run.failures.every((f) => f.runId === 'R-20260530-143223-bbc6')).toBe(true);
+  });
+
   it('disambiguates duplicate scenario ids by pageUrl in sourceKey', () => {
     const dups = run.failures.filter((f) => f.scenarioId === 'NF-USAB-001');
     expect(dups.length).toBe(2);

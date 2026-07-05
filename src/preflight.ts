@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { ConnectorConfig } from './config.js';
+import { resolveReportsDir } from './collect/locate.js';
 
 export interface PreflightIssue {
   level: 'error' | 'warn';
@@ -73,13 +74,15 @@ export function preflight(config: ConnectorConfig): PreflightIssue[] {
         message: `System B inputs dir not found: ${join(b.repoPath, b.inputsDir)} — check systemB.inputsDir`,
       });
     }
-    if (!dirExists(join(b.repoPath, b.reportsDir))) {
+    const reportsDir = resolveReportsDir(config);
+    if (!dirExists(reportsDir)) {
       issues.push({
         level: 'warn',
-        message: `System B reports dir not found yet: ${join(b.repoPath, b.reportsDir)} — created by System B on first run`,
+        message: `System B reports dir not found yet: ${reportsDir} — created by System B on first run`,
       });
     }
     for (const role of config.roles) {
+      if (!role.authRecipe) continue; // System B auto-bootstraps when omitted
       const recipe = join(b.repoPath, role.authRecipe);
       if (!existsSync(recipe)) {
         issues.push({

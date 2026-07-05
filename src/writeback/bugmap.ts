@@ -7,18 +7,22 @@ export interface ProposedBug {
   failure: Failure;
 }
 
+function yamlQuote(s: string): string {
+  return `"${s.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
 /**
- * Map a System B failure to a BUG-{n}.md in System A's docs format (F6).
- *
- * System A's template had no existing BUG-*.md examples at capture time,
- * so this uses the minimal structure the PROBLEM_STATEMENT prescribes for
- * that case (§7): title, severity, steps, expected/actual, source line.
+ * Map a System B failure to a BUG-{n}.md in System A's docs format (F6),
+ * modeled on the real docs/bugs/BUG-001.md in the template repo: YAML
+ * frontmatter (id, title, severity, status, created_at, traces_to, owner)
+ * followed by `# BUG-{n} - Title` and Summary/Evidence-style sections.
  *
  * The HTML comment `ai-test-source` line is the machine-readable
- * idempotency key (scenarioId|pageUrl) scanned by numbering.ts.
+ * idempotency key (scenarioId|pageUrl|title) scanned by numbering.ts.
  */
-export function buildBugFile(failure: Failure, bugNumber: number, runId: string): ProposedBug {
+export function buildBugFile(failure: Failure, bugNumber: number): ProposedBug {
   const today = new Date().toISOString().slice(0, 10);
+  const id = `BUG-${String(bugNumber).padStart(3, '0')}`;
   const steps =
     failure.steps.length > 0
       ? failure.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')
@@ -28,17 +32,23 @@ export function buildBugFile(failure: Failure, bugNumber: number, runId: string)
       ? failure.evidence.map((e) => `- \`${e}\` (System B repo)`).join('\n')
       : '_None recorded._';
 
-  const content = `# BUG-${String(bugNumber).padStart(3, '0')}: ${failure.title}
+  const content = `---
+id: ${id}
+title: ${yamlQuote(failure.title)}
+severity: ${failure.severity}
+status: open
+created_at: ${today}
+traces_to: []
+owner: QA
+---
 
 <!-- ai-test-source: ${failure.sourceKey} -->
 
-- **Severity**: ${failure.severity}
-- **Priority**: ${failure.priority}
-- **Status**: open
-- **Reported**: ${today}
-- **Source**: ai-test run \`${runId}\`, scenario \`${failure.scenarioId}\` (${failure.type})
-- **Role**: ${failure.role || 'n/a'}
-- **Page**: ${failure.pageUrl || 'n/a'}
+# ${id} - ${failure.title}
+
+## Summary
+
+AI system test scenario \`${failure.scenarioId}\` (${failure.type}, ${failure.priority}) failed for role \`${failure.role || 'n/a'}\` on ${failure.pageUrl || 'n/a'} during ai-test run \`${failure.runId}\`.
 
 ## Steps to reproduce
 
@@ -59,7 +69,7 @@ ${evidence}
 
   return {
     number: bugNumber,
-    fileName: `BUG-${String(bugNumber).padStart(3, '0')}.md`,
+    fileName: `${id}.md`,
     content,
     failure,
   };

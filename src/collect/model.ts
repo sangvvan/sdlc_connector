@@ -22,6 +22,8 @@ export interface Failure {
   pageUrl: string;
   /** Role from the report's `app` field ("project:x role:y"); '' if absent. */
   role: string;
+  /** System B run id of the report this failure came from (one run per role). */
+  runId: string;
   /** From validation.failureReason / suggestedDefect.summary. */
   failureReason: string;
   /** From validation.suggestedDefect.severity, fallback derived from priority. */

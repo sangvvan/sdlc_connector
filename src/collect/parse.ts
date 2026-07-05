@@ -116,6 +116,7 @@ export function parseReport(reportPath: string): RunResult {
   }
   const report = parsed.data;
   const warnings: string[] = [];
+  const runId = report.runId ?? 'unknown-run';
   const role = roleFromApp(report.app);
   if (!role) warnings.push(`no role found in report "app" field (${report.app ?? 'absent'})`);
 
@@ -156,6 +157,7 @@ export function parseReport(reportPath: string): RunResult {
       priority,
       pageUrl,
       role,
+      runId,
       failureReason: val.failureReason ?? defect?.summary ?? 'unspecified failure',
       severity: defect?.severity ?? severityFromPriority(priority),
       steps: (sc.steps ?? []).map((s, j) => s.description ?? `(step ${j})`),
@@ -183,7 +185,7 @@ export function parseReport(reportPath: string): RunResult {
   }
 
   return {
-    runId: report.runId ?? 'unknown-run',
+    runId,
     startedAt: report.startedAt ?? '',
     finishedAt: report.finishedAt ?? '',
     totals,

@@ -20,11 +20,16 @@ export function buildInputYaml(config: ConnectorConfig, opts: InputGenOptions): 
   const doc: Record<string, unknown> = {
     project: opts.project,
     baseUrl: opts.baseUrl,
-    roles: config.roles.map((r) => ({ name: r.name, authRecipe: r.authRecipe })),
+    roles: config.roles.map((r) =>
+      r.authRecipe ? { name: r.name, authRecipe: r.authRecipe } : { name: r.name },
+    ),
     crawl: config.crawl,
   };
   if (Object.keys(config.generation).length > 0) {
     doc.generation = config.generation;
+  }
+  if (Object.keys(config.run).length > 0) {
+    doc.run = config.run;
   }
   return stringify(doc);
 }

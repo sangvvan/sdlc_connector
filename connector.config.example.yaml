@@ -17,13 +17,13 @@ systemB:
   reportsDir: reports
 
 # Roles written into the generated System B input YAML.
-# authRecipe paths are relative to System B's repo root and must already
-# exist (the connector never creates credentials).
+# authRecipe paths are relative to System B's repo root and must exist
+# when set (the connector never creates credentials). Omit authRecipe to
+# let System B auto-detect the login form and bootstrap a recipe itself.
 roles:
   - name: admin
-    authRecipe: inputs/auth/admin.yaml
-  - name: user
-    authRecipe: inputs/auth/user.yaml
+    authRecipe: inputs/auth/localhost-admin.yaml
+  - name: competence
 
 # Defaults merged into the generated input YAML. These blocks are passed
 # through verbatim, so any key System B understands can be set here
@@ -33,7 +33,19 @@ crawl:
   maxDepth: 3
 
 generation:
+  maxScenariosPerPage: 14
+  fallbackSmoke: true
+
+# Run settings passed through verbatim (System B WorkflowInput `run` block:
+# testLevel, browsers, nonFunctional toggles, junit, testPlan, ...).
+run:
   testLevel: system
+  browsers:
+    - chromium
+  nonFunctional:
+    a11y: true
+    vitals: true
+    securityHeaders: true
 
 # Where connector run summaries (stage timings) are written,
 # relative to the connector repo root.
