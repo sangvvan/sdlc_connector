@@ -1,0 +1,16 @@
+# Fixture config used by unit tests (paths are placeholders — tests
+# never touch live systems).
+systemA:
+  repoPath: /tmp/fixture/system-a
+systemB:
+  repoPath: /tmp/fixture/system-b
+roles:
+  - name: admin
+    authRecipe: inputs/auth/admin.yaml
+  - name: user
+    authRecipe: inputs/auth/user.yaml
+crawl:
+  maxPages: 50
+  maxDepth: 3
+generation:
+  testLevel: system

@@ -1,0 +1,40 @@
+# connector.config.yaml — copy to connector.config.yaml and edit paths.
+# Everything environment-specific lives here; CLI flags carry only
+# per-run values (--url, --project, --yes).
+
+systemA:
+  # Absolute path to the web-automation-develop-template checkout
+  repoPath: /Users/sang/work/web-automation-develop-template
+  # Relative to repoPath (defaults shown)
+  bugsDir: docs/bugs
+  backlogFile: docs/sprints/backlog.md
+
+systemB:
+  # Absolute path to the ai-automation-framework checkout
+  repoPath: /Users/sang/work/ai-automation-framework
+  # Relative to repoPath (defaults shown)
+  inputsDir: inputs/projects
+  reportsDir: reports
+
+# Roles written into the generated System B input YAML.
+# authRecipe paths are relative to System B's repo root and must already
+# exist (the connector never creates credentials).
+roles:
+  - name: admin
+    authRecipe: inputs/auth/admin.yaml
+  - name: user
+    authRecipe: inputs/auth/user.yaml
+
+# Defaults merged into the generated input YAML. These blocks are passed
+# through verbatim, so any key System B understands can be set here
+# without a connector code change.
+crawl:
+  maxPages: 50
+  maxDepth: 3
+
+generation:
+  testLevel: system
+
+# Where connector run summaries (stage timings) are written,
+# relative to the connector repo root.
+summaryDir: runs
