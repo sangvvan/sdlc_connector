@@ -96,6 +96,53 @@ npx tsx src/cli.ts input-only --url https://... --project demo [--dry-run]
 npx tsx src/cli.ts collect-only [--report path/to/R-xxx.json] [--yes]
 ```
 
+## `connect pipeline` — one config, one command, the whole lifecycle
+
+For a brand-new project the demo above still assumes someone already ran
+System A's phases and deployed. `pipeline` removes that too — everything
+is declared once in the `pipeline:` block of `connector.config.yaml`:
+
+```yaml
+pipeline:
+  project: demo
+  requirementFile: requirement.md            # what to build
+  build:
+    command: ["scripts/legacy/run.sh", "/feature", "{requirement}"]
+  deploy:
+    command: ["scripts/deploy.sh", "local"]
+    url: http://localhost:3000
+    healthTimeoutSec: 180
+```
+
+```bash
+npx tsx src/cli.ts pipeline --yes            # or omit --yes to keep the gate
+npx tsx src/cli.ts pipeline --skip-build     # app code exists, just deploy+test
+npx tsx src/cli.ts pipeline --skip-deploy    # app already running
+npx tsx src/cli.ts pipeline --requirement docs/req-v2.md   # per-run override
+```
+
+Stages (each visible as a `█ GIAI ĐOẠN x/3` banner):
+
+1. **BUILD** — runs System A's *own* phase driver
+   (`run.sh /feature "<requirement>"`: PS → BA → Planning → Design →
+   Implementation → QA → DevOps) inside System A's repo. The connector
+   adds nothing of its own here — it only invokes what System A documents.
+2. **DEPLOY** — runs System A's deploy script, then polls `deploy.url`
+   until the app answers (any HTTP status < 500) or `healthTimeoutSec`
+   expires.
+3. **TEST + WRITE-BACK** — the standard BƯỚC 0-4 chain (discovery →
+   System B run → collect → human gate → bugs/backlog into System A).
+
+Notes:
+
+- The BUILD stage requires System A's AI providers (Claude/Codex CLIs)
+  to be installed and authenticated on this machine — that is System A's
+  own prerequisite, not the connector's.
+- `--yes` bypasses only the connector's write-back gate; any interactive
+  gates inside System A's own pipeline remain System A's behavior.
+- A failed build/deploy stops the chain (fail loud); `--skip-build` /
+  `--skip-deploy` let you resume from the middle.
+
 Every run writes `runs/summary-<timestamp>.json` with per-stage timings.
 
 ## Write-back behavior

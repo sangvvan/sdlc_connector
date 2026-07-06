@@ -32,6 +32,30 @@ const configSchema = z.object({
   generation: z.record(z.unknown()).default({}),
   run: z.record(z.unknown()).default({}),
   summaryDir: z.string().default('runs'),
+  // One-place config for `connect pipeline`: requirement → System A
+  // agents build → deploy → AI test → write-back, in a single command.
+  pipeline: z
+    .object({
+      project: z.string().min(1),
+      // Default requirement source; overridable per run with --requirement.
+      requirementFile: z.string().optional(),
+      // Runs inside System A's repo. "{requirement}" is replaced with the
+      // requirement text, "{requirementFile}" with its absolute path.
+      // Default drives System A's own phase pipeline (scripts/legacy/run.sh).
+      build: z
+        .object({
+          command: z.array(z.string().min(1)).min(1),
+        })
+        .optional(),
+      deploy: z.object({
+        // Runs inside System A's repo, e.g. ["scripts/deploy.sh", "local"].
+        command: z.array(z.string().min(1)).min(1),
+        // Where the app will be reachable — becomes --url for the test stage.
+        url: z.string().url(),
+        healthTimeoutSec: z.number().int().positive().default(180),
+      }),
+    })
+    .optional(),
 });
 
 export type ConnectorConfig = z.infer<typeof configSchema>;

@@ -13,6 +13,12 @@ export function banner(step: number, total: number, title: string): void {
   console.log(pc.cyan(LINE));
 }
 
+/** Pipeline-level banner (GIAI ĐOẠN) — one level above the BƯỚC banners. */
+export function phase(step: number, total: number, title: string): void {
+  console.log('');
+  console.log(pc.magenta(pc.bold(`█ GIAI ĐOẠN ${step}/${total} — ${title}`)));
+}
+
 export function ok(msg: string): void {
   console.log(`${pc.green('✓')} ${msg}`);
 }

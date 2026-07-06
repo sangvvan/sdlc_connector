@@ -55,3 +55,21 @@ run:
 # Where connector run summaries (stage timings) are written,
 # relative to the connector repo root.
 summaryDir: runs
+
+# ── connect pipeline: cả vòng đời từ MỘT chỗ config ─────────────────────
+# `connect pipeline --yes` chạy: requirement → System A agents build →
+# deploy → AI test → write-back. Mọi stage gọi script CỦA CHÍNH System A
+# (zero-intrusion); bỏ block này nếu chỉ dùng `connect run`.
+pipeline:
+  project: demo
+  # Requirement mặc định (ghi đè per-run bằng --requirement <file>)
+  requirementFile: requirement.md
+  # Chạy trong repo System A. {requirement} = nội dung file requirement,
+  # {requirementFile} = đường dẫn tuyệt đối của nó.
+  build:
+    command: ["scripts/legacy/run.sh", "/feature", "{requirement}"]
+  deploy:
+    command: ["scripts/deploy.sh", "local"]
+    # URL app sau deploy — tự động thành --url cho stage test
+    url: http://localhost:3000
+    healthTimeoutSec: 180

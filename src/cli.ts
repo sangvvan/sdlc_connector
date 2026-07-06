@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
-import { existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { loadConfig, type ConnectorConfig } from './config.js';
@@ -16,7 +16,8 @@ import { nextBugNumber, existingSourceKeys } from './writeback/numbering.js';
 import { buildBacklogAppendix, appendToBacklog } from './writeback/backlog.js';
 import { confirmWriteback } from './writeback/gate.js';
 import { RunSummary } from './report/summary.js';
-import { banner, ok, warn, fail, cmd } from './ui.js';
+import { runStageCommand, substituteTokens, waitForUrl } from './pipeline/pipeline.js';
+import { banner, phase, ok, warn, fail, cmd } from './ui.js';
 
 function loadConfigOrDie(configPath: string): ConnectorConfig {
   try {
@@ -142,6 +143,86 @@ async function proposeAndWriteback(
   return { written, skippedDuplicates, approved };
 }
 
+/**
+ * The connector's core chain (BƯỚC 0-4): input gen (+discovery) →
+ * System B workflow → collect → gated write-back → summary.
+ * Shared by `run` and the test stage of `pipeline`.
+ */
+async function runChain(
+  config: ConnectorConfig,
+  opts: { url: string; project: string; yes: boolean },
+): Promise<void> {
+  const summary = new RunSummary(opts.project, opts.url);
+  const runStartedAt = new Date();
+
+  try {
+    const applied = await summary.time('input-gen', () =>
+      applyInputPlan(config, { project: opts.project, baseUrl: opts.url }),
+    );
+    if (applied.plan.mode === 'discovered') {
+      banner(0, 4, 'Tự động lấy roles & accounts từ SDLC docs (System A)');
+      describeInput(applied, config, opts.url);
+    }
+
+    banner(1, 4, 'Sinh input cho AI-Test từ app đã deploy');
+    if (applied.plan.mode !== 'discovered') describeInput(applied, config, opts.url);
+    const inputPath = applied.plan.path;
+    const crawl = config.crawl as { maxPages?: number };
+    ok(
+      `${join(config.systemB.inputsDir, `${opts.project}.yaml`)} created ` +
+        `(${applied.roleCount} roles, maxPages ${crawl.maxPages ?? '?'})`,
+    );
+
+    banner(2, 4, 'Chạy AI Automation Framework');
+    cmd('npm run ai-test -- workflow --input ' + join(config.systemB.inputsDir, `${opts.project}.yaml`));
+    const invoke = await summary.time('system-b-workflow', () => invokeSystemB(config, inputPath));
+
+    banner(3, 4, 'Thu kết quả');
+    const runs = await summary.time('collect', () => {
+      // System B exit codes (lib/cli/commands/workflow.ts): 0 = all
+      // passed, 1 = ran with test failures (normal — failures are the
+      // payload), 2 = orchestration error. One report per role is
+      // written to {reportsDir}/json/{runId}.json.
+      const reportPaths = locateNewReports(config, runStartedAt);
+      if (reportPaths.length === 0) {
+        throw new Error(
+          `System B exited with code ${invoke.exitCode} and no new report appeared under ` +
+            `${resolveReportsDir(config)} — infrastructure error, nothing to collect.`,
+        );
+      }
+      if (invoke.exitCode === 2) {
+        warn('System B reported an orchestration error (exit 2) — collecting partial results.');
+      }
+      return reportPaths.map((p) => parseReport(p));
+    });
+    for (const run of runs) reportLine(run);
+
+    banner(4, 4, 'Đề xuất ghi ngược về SDLC docs');
+    const failures = mergeFailures(runs);
+    const runLabel = runs.map((r) => r.runId).join(', ');
+    const outcome = await summary.time('write-back', () =>
+      proposeAndWriteback(config, failures, runLabel, opts.yes),
+    );
+    if (!outcome.approved && failures.length > 0) {
+      console.log(pc.dim('Write-back declined — System A docs untouched.'));
+    }
+
+    const summaryPath = summary.write(config.summaryDir, {
+      runIds: runs.map((r) => r.runId),
+      totals: runs.map((r) => r.totals),
+      bugsWritten: outcome.written.map((b) => b.fileName),
+      skippedDuplicates: outcome.skippedDuplicates,
+    });
+    console.log('');
+    ok(`Run summary: ${summaryPath}`);
+  } catch (e) {
+    fail((e as Error).message);
+    const summaryPath = summary.write(config.summaryDir, { error: (e as Error).message });
+    console.log(pc.dim(`Partial run summary: ${summaryPath}`));
+    process.exit(1);
+  }
+}
+
 const program = new Command();
 program
   .name('connect')
@@ -157,78 +238,75 @@ program
   .action(async (opts: { url: string; project: string; yes: boolean }) => {
     const config = loadConfigOrDie(program.opts().config);
     runPreflightOrDie(config);
-    const summary = new RunSummary(opts.project, opts.url);
-    const runStartedAt = new Date();
-
-    try {
-      const applied = await summary.time('input-gen', () =>
-        applyInputPlan(config, { project: opts.project, baseUrl: opts.url }),
-      );
-      if (applied.plan.mode === 'discovered') {
-        banner(0, 4, 'Tự động lấy roles & accounts từ SDLC docs (System A)');
-        describeInput(applied, config, opts.url);
-      }
-
-      banner(1, 4, 'Sinh input cho AI-Test từ app đã deploy');
-      if (applied.plan.mode !== 'discovered') describeInput(applied, config, opts.url);
-      const inputPath = applied.plan.path;
-      const crawl = config.crawl as { maxPages?: number };
-      ok(
-        `${join(config.systemB.inputsDir, `${opts.project}.yaml`)} created ` +
-          `(${applied.roleCount} roles, maxPages ${crawl.maxPages ?? '?'})`,
-      );
-
-      banner(2, 4, 'Chạy AI Automation Framework');
-      const invoke = await summary.time('system-b-workflow', () =>
-        invokeSystemB(config, inputPath),
-      );
-      cmd(invoke.command);
-
-      banner(3, 4, 'Thu kết quả');
-      const runs = await summary.time('collect', () => {
-        // System B exit codes (lib/cli/commands/workflow.ts): 0 = all
-        // passed, 1 = ran with test failures (normal — failures are the
-        // payload), 2 = orchestration error. One report per role is
-        // written to {reportsDir}/json/{runId}.json.
-        const reportPaths = locateNewReports(config, runStartedAt);
-        if (reportPaths.length === 0) {
-          throw new Error(
-            `System B exited with code ${invoke.exitCode} and no new report appeared under ` +
-              `${resolveReportsDir(config)} — infrastructure error, nothing to collect.`,
-          );
-        }
-        if (invoke.exitCode === 2) {
-          warn('System B reported an orchestration error (exit 2) — collecting partial results.');
-        }
-        return reportPaths.map((p) => parseReport(p));
-      });
-      for (const run of runs) reportLine(run);
-
-      banner(4, 4, 'Đề xuất ghi ngược về SDLC docs');
-      const failures = mergeFailures(runs);
-      const runLabel = runs.map((r) => r.runId).join(', ');
-      const outcome = await summary.time('write-back', () =>
-        proposeAndWriteback(config, failures, runLabel, opts.yes),
-      );
-      if (!outcome.approved && failures.length > 0) {
-        console.log(pc.dim('Write-back declined — System A docs untouched.'));
-      }
-
-      const summaryPath = summary.write(config.summaryDir, {
-        runIds: runs.map((r) => r.runId),
-        totals: runs.map((r) => r.totals),
-        bugsWritten: outcome.written.map((b) => b.fileName),
-        skippedDuplicates: outcome.skippedDuplicates,
-      });
-      console.log('');
-      ok(`Run summary: ${summaryPath}`);
-    } catch (e) {
-      fail((e as Error).message);
-      const summaryPath = summary.write(config.summaryDir, { error: (e as Error).message });
-      console.log(pc.dim(`Partial run summary: ${summaryPath}`));
-      process.exit(1);
-    }
+    await runChain(config, opts);
   });
+
+program
+  .command('pipeline')
+  .description(
+    'Full lifecycle from ONE config: requirement → System A agents build → deploy → AI test → write-back',
+  )
+  .option('--requirement <file>', 'requirement file (overrides pipeline.requirementFile)')
+  .option('--skip-build', 'skip the System A agents build stage', false)
+  .option('--skip-deploy', 'skip the deploy stage (app already running)', false)
+  .option('--yes', 'skip the human confirmation gate (demo/CI)', false)
+  .action(
+    async (opts: { requirement?: string; skipBuild: boolean; skipDeploy: boolean; yes: boolean }) => {
+      const config = loadConfigOrDie(program.opts().config);
+      const p = config.pipeline;
+      if (!p) {
+        fail(
+          'No `pipeline:` block in connector.config.yaml — add project, build.command, ' +
+            'deploy.command and deploy.url (see connector.config.example.yaml).',
+        );
+        process.exit(1);
+      }
+      runPreflightOrDie(config);
+      const repoA = config.systemA.repoPath;
+
+      try {
+        // ── GIAI ĐOẠN 1: System A agents build from the requirement ──
+        if (!opts.skipBuild && p.build) {
+          const reqFile = opts.requirement ?? p.requirementFile;
+          if (!reqFile) {
+            throw new Error(
+              'Build stage needs a requirement: pass --requirement <file> or set pipeline.requirementFile.',
+            );
+          }
+          const reqFileAbs = resolve(reqFile);
+          const requirement = readFileSync(reqFileAbs, 'utf8').trim();
+          phase(1, 3, 'BUILD — System A agents chạy từ requirement');
+          const command = substituteTokens(p.build.command, requirement, reqFileAbs);
+          cmd(command.join(' '));
+          await runStageCommand(command, repoA);
+          ok('System A pipeline finished');
+        } else {
+          phase(1, 3, 'BUILD — bỏ qua' + (opts.skipBuild ? ' (--skip-build)' : ' (không cấu hình)'));
+        }
+
+        // ── GIAI ĐOẠN 2: deploy + health check ──
+        if (!opts.skipDeploy) {
+          phase(2, 3, 'DEPLOY — chạy script deploy của System A');
+          cmd(p.deploy.command.join(' '));
+          await runStageCommand(p.deploy.command, repoA);
+          ok(`Deploy command finished — waiting for ${p.deploy.url} (max ${p.deploy.healthTimeoutSec}s)`);
+          await waitForUrl(p.deploy.url, p.deploy.healthTimeoutSec);
+          ok(`App is up: ${p.deploy.url}`);
+        } else {
+          phase(2, 3, 'DEPLOY — bỏ qua (--skip-deploy)');
+          await waitForUrl(p.deploy.url, 10);
+          ok(`App already up: ${p.deploy.url}`);
+        }
+
+        // ── GIAI ĐOẠN 3: the existing test + write-back chain ──
+        phase(3, 3, 'TEST + WRITE-BACK — chuỗi BƯỚC 0-4');
+        await runChain(config, { url: p.deploy.url, project: p.project, yes: opts.yes });
+      } catch (e) {
+        fail((e as Error).message);
+        process.exit(1);
+      }
+    },
+  );
 
 program
   .command('input-only')
