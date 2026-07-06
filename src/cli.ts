@@ -5,7 +5,8 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import { loadConfig, type ConnectorConfig } from './config.js';
 import { preflight, hasErrors } from './preflight.js';
-import { buildInputYaml, writeInputFile } from './forward/inputgen.js';
+import { applyInputPlan, buildInputYaml, planInput, type AppliedInput } from './forward/inputgen.js';
+import { isNonLocalTarget, plannedRecipes, rolesFromDiscovery } from './discover/discover.js';
 import { invokeSystemB } from './forward/invoke.js';
 import { locateNewReports, locateNewestReport, resolveReportsDir } from './collect/locate.js';
 import { parseReport } from './collect/parse.js';
@@ -54,6 +55,32 @@ function mergeFailures(runs: RunResult[]): Failure[] {
     }
   }
   return merged;
+}
+
+/** Print how the input was assembled (BƯỚC 0 shows only when discovery ran). */
+function describeInput(applied: AppliedInput, config: ConnectorConfig, baseUrl: string): void {
+  const { plan } = applied;
+  if (plan.mode === 'reuse') {
+    ok(
+      `Reusing existing ${plan.path} (${applied.roleCount} roles kept, baseUrl → ${baseUrl})`,
+    );
+    return;
+  }
+  if (plan.mode === 'discovered') {
+    const d = plan.discovery!;
+    ok(`Discovered ${d.roles.length} roles from System A (app/lib/auth/roles.ts)`);
+    ok(
+      `${applied.recipes.length} auth recipes generated from docs/demo-accounts.md → inputs/auth/`,
+    );
+    for (const w of d.warnings) warn(`discovery: ${w}`);
+    if (isNonLocalTarget(baseUrl)) {
+      warn(
+        `demo credentials from docs/demo-accounts.md are being used against non-local target ${baseUrl} — they are meant for local/dev only`,
+      );
+    }
+    return;
+  }
+  ok(`Roles from connector.config.yaml (${config.roles.length} roles)`);
 }
 
 function reportLine(run: RunResult): void {
@@ -134,14 +161,21 @@ program
     const runStartedAt = new Date();
 
     try {
-      banner(1, 4, 'Sinh input cho AI-Test từ app đã deploy');
-      const inputPath = await summary.time('input-gen', () =>
-        writeInputFile(config, { project: opts.project, baseUrl: opts.url }),
+      const applied = await summary.time('input-gen', () =>
+        applyInputPlan(config, { project: opts.project, baseUrl: opts.url }),
       );
+      if (applied.plan.mode === 'discovered') {
+        banner(0, 4, 'Tự động lấy roles & accounts từ SDLC docs (System A)');
+        describeInput(applied, config, opts.url);
+      }
+
+      banner(1, 4, 'Sinh input cho AI-Test từ app đã deploy');
+      if (applied.plan.mode !== 'discovered') describeInput(applied, config, opts.url);
+      const inputPath = applied.plan.path;
       const crawl = config.crawl as { maxPages?: number };
       ok(
         `${join(config.systemB.inputsDir, `${opts.project}.yaml`)} created ` +
-          `(${config.roles.length} roles, maxPages ${crawl.maxPages ?? '?'})`,
+          `(${applied.roleCount} roles, maxPages ${crawl.maxPages ?? '?'})`,
       );
 
       banner(2, 4, 'Chạy AI Automation Framework');
@@ -204,13 +238,26 @@ program
   .option('--dry-run', 'print YAML to stdout instead of writing', false)
   .action((opts: { url: string; project: string; dryRun: boolean }) => {
     const config = loadConfigOrDie(program.opts().config);
+    const genOpts = { project: opts.project, baseUrl: opts.url };
     if (opts.dryRun) {
-      console.log(buildInputYaml(config, { project: opts.project, baseUrl: opts.url }));
+      const plan = planInput(config, genOpts);
+      if (plan.mode === 'reuse') {
+        ok(`would reuse existing ${plan.path}, updating baseUrl only`);
+        return;
+      }
+      if (plan.mode === 'discovered') {
+        const recipes = plannedRecipes(plan.discovery!, opts.project);
+        for (const r of recipes) ok(`would generate ${r.relPath} (role ${r.role})`);
+        console.log(buildInputYaml(config, genOpts, rolesFromDiscovery(plan.discovery!, recipes)));
+        return;
+      }
+      console.log(buildInputYaml(config, genOpts));
       return;
     }
     runPreflightOrDie(config);
-    const path = writeInputFile(config, { project: opts.project, baseUrl: opts.url });
-    ok(`${path} created`);
+    const applied = applyInputPlan(config, genOpts);
+    describeInput(applied, config, opts.url);
+    ok(`${applied.plan.path} created`);
   });
 
 program

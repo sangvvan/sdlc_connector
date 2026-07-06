@@ -26,8 +26,10 @@ Prerequisites:
 
 - Node.js 20+
 - Both repos checked out locally; System B has had `npm install` run
-- Auth recipes (`inputs/auth/*.yaml`) already prepared in System B's format
-  — the connector references them by path, it never creates credentials
+- For projects built from the System A template: **nothing else** — roles
+  and auth recipes are discovered automatically (see below). For other
+  projects: auth recipes prepared in System B's format, referenced from
+  `roles` in the connector config.
 
 ## Config format (`connector.config.yaml`)
 
@@ -40,10 +42,7 @@ systemB:
   repoPath: /abs/path/ai-automation-framework
   inputsDir: inputs/projects            # default
   reportsDir: reports                   # default
-roles:
-  - name: admin
-    authRecipe: inputs/auth/localhost-admin.yaml  # relative to System B repo
-  - name: competence   # no authRecipe → System B auto-bootstraps one
+roles: []       # optional fallback — see "Where roles come from" below
 crawl:          # passed through verbatim into the generated input YAML
   maxPages: 50
   maxDepth: 3
@@ -54,6 +53,29 @@ summaryDir: runs
 
 Everything environment-specific lives here; CLI flags carry only per-run
 values (`--url`, `--project`, `--yes`).
+
+## Where roles come from (priority order)
+
+The connector resolves roles/auth for the generated input YAML from three
+sources, first match wins:
+
+1. **Existing System B input** — if `inputs/projects/{project}.yaml`
+   already exists in System B, it is the source of truth: everything in it
+   is kept and only `baseUrl` (and `project`) are updated per run. Teams
+   that hand-tuned their System B config lose nothing.
+2. **Discovery from System A** (fresh template projects — zero manual
+   config): the connector reads
+   - `app/lib/auth/roles.ts` → the role list,
+   - `docs/demo-accounts.md` → demo email per role, the shared password,
+     and the login path,
+   and generates one System B auth recipe per role into
+   `inputs/auth/{project}-{role}.yaml` (validated against System B's
+   `AuthRecipe` schema). Locators use the template login form's
+   accessibility names (`Email`, `Password`, `Sign in` — the same ones
+   `tests/pom/LoginPage.ts` uses). A warning is printed when these demo
+   credentials are pointed at a non-localhost target.
+3. **`roles` in connector config** — fallback for projects that don't
+   follow the template conventions.
 
 ## The one-command demo
 
@@ -148,6 +170,18 @@ checked directly against both repos' source code:
    convention** (`.agent/skills/core/scrum.md`), though the file may not
    exist yet in a fresh template — the connector creates it with a header
    when missing, and only ever appends.
+9. **[verified] Discovery sources are template conventions**:
+   `app/lib/auth/roles.ts` (`export const roles = [...]`) and
+   `docs/demo-accounts.md` (role→email table + shared password + "Sign in
+   at `/auth/login`"). Generated recipes were validated against System B's
+   real `loadAuthRecipe`/`readWorkflowInput`. If a project diverges from
+   these conventions, discovery silently steps aside and the `roles`
+   fallback in connector config applies. Note this consciously extends
+   PROBLEM_STATEMENT §7 ("auth recipes are prepared manually"): the
+   connector still creates no credentials — it transfers the demo
+   credentials System A already publishes in its own docs. They are
+   written inline into the generated recipes (no new exposure; they are
+   already plaintext in System A) and are for local/dev targets only.
 
 ## Acceptance criteria status (PROBLEM_STATEMENT §8)
 

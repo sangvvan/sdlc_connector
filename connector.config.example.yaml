@@ -16,14 +16,19 @@ systemB:
   inputsDir: inputs/projects
   reportsDir: reports
 
-# Roles written into the generated System B input YAML.
+# Roles are OPTIONAL — the connector resolves them in priority order:
+#   1. System B already has inputs/projects/{project}.yaml → reused as-is
+#      (only baseUrl is updated per run)
+#   2. Discovery from System A: app/lib/auth/roles.ts +
+#      docs/demo-accounts.md → roles AND auth recipes generated
+#      automatically (zero manual System B config for template projects)
+#   3. This list, as the fallback for non-template projects.
 # authRecipe paths are relative to System B's repo root and must exist
-# when set (the connector never creates credentials). Omit authRecipe to
-# let System B auto-detect the login form and bootstrap a recipe itself.
-roles:
-  - name: admin
-    authRecipe: inputs/auth/localhost-admin.yaml
-  - name: competence
+# when set. Omit authRecipe to let System B auto-detect the login form.
+# roles:
+#   - name: admin
+#     authRecipe: inputs/auth/localhost-admin.yaml
+#   - name: competence
 
 # Defaults merged into the generated input YAML. These blocks are passed
 # through verbatim, so any key System B understands can be set here

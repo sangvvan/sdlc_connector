@@ -22,7 +22,10 @@ const configSchema = z.object({
     inputsDir: z.string().default('inputs/projects'),
     reportsDir: z.string().default('reports'),
   }),
-  roles: z.array(roleSchema).min(1),
+  // Optional: only the fallback source of roles. Priority order is
+  // System B's existing inputs/projects/{p}.yaml > discovery from
+  // System A (roles.ts + demo-accounts.md) > this list.
+  roles: z.array(roleSchema).default([]),
   // Passed through verbatim into the generated input YAML so any key
   // System B understands works without a connector code change.
   crawl: z.record(z.unknown()).default({ maxPages: 50, maxDepth: 3 }),
