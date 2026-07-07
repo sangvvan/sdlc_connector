@@ -143,6 +143,47 @@ Notes:
 - A failed build/deploy stops the chain (fail loud); `--skip-build` /
   `--skip-deploy` let you resume from the middle.
 
+## `connect web` — Project Factory UI (localhost v1)
+
+A one-page web UI over `pipeline` for starting projects without touching
+a terminal or YAML:
+
+```yaml
+web:
+  port: 4000
+  templateRepo: /abs/path/web-automation-develop-template   # or a git URL
+  workspaceDir: projects
+```
+
+```bash
+npx tsx src/cli.ts web        # → http://127.0.0.1:4000
+```
+
+Form: project name, problem statement (paste or upload .md), optional
+tech stack, AI provider (claude default / codex / gemini / opencode),
+deploy target (local / staging / production × aws / azure / vercel), and
+the app URL. Submit and the server:
+
+1. clones `templateRepo` into `{workspaceDir}/{name}/` (a fresh System A
+   project repo),
+2. writes `{name}.requirement.md` + a generated `{name}.connector.yaml`
+   (per-project pipeline config, System B + defaults inherited from the
+   base config),
+3. runs `connect pipeline --yes` as a background job — build → deploy →
+   health check → AI test → write-back,
+4. shows live logs (the same GIAI ĐOẠN/BƯỚC output) and a result card:
+   repo path, app URL, pass/fail totals, BUG files written.
+
+The project team then continues exactly as in the normal workflow —
+`/planning` in the new repo sees the bugs/backlog; later runs reuse the
+project's System B input (reuse mode).
+
+Scope guardrails (v1): binds `127.0.0.1` only, single user, no auth —
+it shells out to git/npm/System A scripts, so do NOT expose it publicly.
+AI provider CLIs and deploy credentials must already work on this
+machine. Job state survives server restarts
+(`{workspaceDir}/{name}.state.json` + `.log`).
+
 Every run writes `runs/summary-<timestamp>.json` with per-stage timings.
 
 ## Write-back behavior

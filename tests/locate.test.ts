@@ -16,6 +16,7 @@ function configFor(repoPath: string): ConnectorConfig {
     generation: {},
     run: {},
     summaryDir: 'runs',
+    web: { port: 4000, workspaceDir: 'projects' },
   };
 }
 

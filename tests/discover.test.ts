@@ -52,6 +52,7 @@ function configFor(): ConnectorConfig {
     generation: {},
     run: {},
     summaryDir: 'runs',
+    web: { port: 4000, workspaceDir: 'projects' },
   };
 }
 

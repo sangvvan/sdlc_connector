@@ -32,6 +32,17 @@ const configSchema = z.object({
   generation: z.record(z.unknown()).default({}),
   run: z.record(z.unknown()).default({}),
   summaryDir: z.string().default('runs'),
+  // `connect web` — localhost project-factory UI.
+  web: z
+    .object({
+      port: z.number().int().positive().default(4000),
+      // Template to clone for new projects: local path or git URL of
+      // web-automation-develop-template.
+      templateRepo: z.string().optional(),
+      // Where new project repos + their generated configs/logs live.
+      workspaceDir: z.string().default('projects'),
+    })
+    .default({}),
   // One-place config for `connect pipeline`: requirement → System A
   // agents build → deploy → AI test → write-back, in a single command.
   pipeline: z

@@ -364,6 +364,21 @@ program
     await proposeAndWriteback(config, run.failures, run.runId, opts.yes);
   });
 
+program
+  .command('web')
+  .description('Localhost project-factory UI: form → clone template → full pipeline → result')
+  .option('--port <n>', 'port (default: web.port in config, 4000)')
+  .action(async (opts: { port?: string }) => {
+    const { startWebServer } = await import('./web/server.js');
+    const config = loadConfigOrDie(program.opts().config);
+    const port = opts.port ? Number(opts.port) : config.web.port;
+    startWebServer(config, process.cwd(), port);
+    ok(`Project Factory: http://127.0.0.1:${port} (Ctrl+C để dừng)`);
+    if (!config.web.templateRepo) {
+      warn('web.templateRepo chưa cấu hình — tạo project mới sẽ báo lỗi cho tới khi anh set nó.');
+    }
+  });
+
 program.parseAsync().catch((e: unknown) => {
   fail((e as Error).message);
   process.exit(1);

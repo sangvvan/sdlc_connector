@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDLC Connector — Project Factory</title>
+<style>
+  :root {
+    --bg: #f6f8f8; --surface: #ffffff; --ink: #1c2528; --ink-soft: #52646b;
+    --line: #dde5e6; --accent: #0e7d8a; --accent-soft: #e2f1f3;
+    --ok: #2e7d32; --err: #b4404a; --run: #9a6700;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101718; --surface: #182123; --ink: #e4ecec; --ink-soft: #93a6aa;
+      --line: #263336; --accent: #4cc4d1; --accent-soft: #12333a;
+      --ok: #7bc67e; --err: #ef7f89; --run: #e3b341;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.55 "Segoe UI", system-ui, sans-serif;
+  }
+  code, pre, .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  header {
+    padding: 16px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px;
+  }
+  header h1 { font-size: 17px; margin: 0; }
+  header span { color: var(--ink-soft); font-size: 12.5px; }
+  main {
+    display: grid; grid-template-columns: 400px 1fr; gap: 20px;
+    padding: 20px 24px; max-width: 1400px; margin: 0 auto;
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  h2 { font-size: 14px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); }
+  label { display: block; font-weight: 600; font-size: 12.5px; margin: 12px 0 4px; }
+  input, textarea, select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--ink); font: inherit;
+  }
+  textarea { resize: vertical; }
+  input:focus, textarea:focus, select:focus, button:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .checks { display: flex; gap: 18px; margin-top: 12px; font-size: 13px; }
+  .checks label { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 500; }
+  .checks input { width: auto; }
+  button {
+    margin-top: 16px; width: 100%; padding: 10px; border: 0; border-radius: 7px;
+    background: var(--accent); color: #fff; font: 600 14px "Segoe UI", system-ui, sans-serif;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .problems { color: var(--err); font-size: 13px; margin-top: 10px; white-space: pre-line; }
+  .plist { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .plist button {
+    margin: 0; width: 100%; text-align: left; background: var(--bg); color: var(--ink);
+    border: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px;
+    font-weight: 500;
+  }
+  .plist button.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .badge { font-size: 11px; font-weight: 700; padding: 1px 9px; border-radius: 999px; align-self: center; }
+  .badge.running   { color: var(--run); border: 1px solid var(--run); }
+  .badge.succeeded { color: var(--ok);  border: 1px solid var(--ok); }
+  .badge.failed    { color: var(--err); border: 1px solid var(--err); }
+  .result { margin-bottom: 14px; font-size: 13.5px; }
+  .result table { border-collapse: collapse; width: 100%; }
+  .result td { padding: 3px 8px 3px 0; vertical-align: top; }
+  .result td:first-child { color: var(--ink-soft); white-space: nowrap; width: 130px; }
+  pre#log {
+    background: #10171a; color: #cfe3e6; border-radius: 8px; padding: 14px;
+    max-height: 460px; overflow: auto; font-size: 12px; margin: 0; white-space: pre-wrap;
+  }
+  .empty { color: var(--ink-soft); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔗 SDLC Connector — Project Factory</h1>
+  <span>requirement vào → repo + app deploy + AI test + bug report ra · localhost only</span>
+</header>
+<main>
+  <section class="panel">
+    <h2>Project mới</h2>
+    <form id="f">
+      <label for="name">Tên project</label>
+      <input id="name" required placeholder="course-catalog" pattern="[a-z][a-z0-9-]{0,39}">
+      <label for="req">Problem statement / requirement</label>
+      <textarea id="req" rows="7" required placeholder="Mô tả bài toán… (hoặc chọn file bên dưới)"></textarea>
+      <input type="file" id="reqfile" accept=".md,.txt" aria-label="Tải file requirement">
+      <label for="stack">Tech stack (tùy chọn — thêm vào requirement)</label>
+      <input id="stack" placeholder="Remix + PostgreSQL + Tailwind (mặc định của template)">
+      <label for="prov">AI provider (chạy các phase SDLC)</label>
+      <select id="prov">
+        <option value="claude" selected>claude (mặc định)</option>
+        <option value="codex">codex</option>
+        <option value="gemini">gemini</option>
+        <option value="opencode">opencode</option>
+      </select>
+      <label for="target">Deploy lên đâu</label>
+      <select id="target">
+        <option value="local" selected>local (docker compose)</option>
+        <option value="staging aws">staging — AWS</option>
+        <option value="staging azure">staging — Azure</option>
+        <option value="staging vercel">staging — Vercel</option>
+        <option value="production aws">production — AWS</option>
+        <option value="production azure">production — Azure</option>
+        <option value="production vercel">production — Vercel</option>
+      </select>
+      <label for="url">URL app sau deploy (domain)</label>
+      <input id="url" value="http://localhost:3000">
+      <div class="checks">
+        <label><input type="checkbox" id="skipBuild"> bỏ qua build</label>
+        <label><input type="checkbox" id="skipDeploy"> app đang chạy sẵn</label>
+      </div>
+      <button id="go" type="submit">🚀 Start project — chạy full workflow</button>
+      <div class="problems" id="problems"></div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Projects &amp; runs</h2>
+    <ul class="plist" id="plist"></ul>
+    <div id="detail" class="empty">Chưa chọn project nào.</div>
+  </section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let selected = null;
+
+  $('reqfile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if (f) $('req').value = await f.text();
+  });
+
+  $('f').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('problems').textContent = '';
+    $('go').disabled = true;
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: $('name').value.trim(),
+          requirement: $('req').value,
+          techStack: $('stack').value,
+          aiProvider: $('prov').value,
+          deployTarget: $('target').value,
+          url: $('url').value.trim(),
+          skipBuild: $('skipBuild').checked,
+          skipDeploy: $('skipDeploy').checked,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        $('problems').textContent = (body.problems || [body.error]).join('\n');
+      } else {
+        selected = body.state.name;
+        await refresh();
+      }
+    } finally {
+      $('go').disabled = false;
+    }
+  });
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  async function refresh() {
+    const { projects } = await (await fetch('/api/projects')).json();
+    $('plist').innerHTML = projects.map((p) =>
+      `<li><button type="button" class="${p.name === selected ? 'sel' : ''}" data-name="${esc(p.name)}">
+        <span class="mono">${esc(p.name)}</span>
+        <span class="badge ${esc(p.status)}">${esc(p.status)}${p.status === 'running' ? ' · ' + esc(p.step) : ''}</span>
+      </button></li>`).join('') || '<li class="empty">Chưa có project nào.</li>';
+    document.querySelectorAll('#plist button').forEach((b) =>
+      b.addEventListener('click', () => { selected = b.dataset.name; refresh(); }));
+    if (selected) await showDetail(selected);
+  }
+
+  async function showDetail(name) {
+    const res = await fetch('/api/projects/' + name);
+    if (!res.ok) return;
+    const { state } = await res.json();
+    const log = await (await fetch('/api/projects/' + name + '/log')).text();
+    const r = state.result;
+    const totals = r && r.totals ? JSON.stringify(r.totals) : '—';
+    $('detail').classList.remove('empty');
+    $('detail').innerHTML = `
+      <div class="result"><table>
+        <tr><td>Trạng thái</td><td><span class="badge ${esc(state.status)}">${esc(state.status)}</span> — bước: ${esc(state.step)}</td></tr>
+        <tr><td>Repo project</td><td class="mono">${esc('projects/' + state.name + '/')}</td></tr>
+        <tr><td>App URL</td><td><a href="${esc(state.request.url)}" target="_blank" rel="noopener" class="mono">${esc(state.request.url)}</a></td></tr>
+        <tr><td>Kết quả test</td><td class="mono">${esc(totals)}</td></tr>
+        <tr><td>Bug đã ghi</td><td class="mono">${esc(r && r.bugsWritten ? r.bugsWritten.join(', ') || '0' : '—')}</td></tr>
+        ${state.error ? `<tr><td>Lỗi</td><td class="mono">${esc(state.error)}</td></tr>` : ''}
+      </table></div>
+      <pre id="log">${esc(log)}</pre>`;
+    const pre = $('log');
+    pre.scrollTop = pre.scrollHeight;
+  }
+
+  refresh();
+  setInterval(refresh, 2500);
+</script>
+</body>
+</html>

@@ -56,6 +56,17 @@ run:
 # relative to the connector repo root.
 summaryDir: runs
 
+# ── connect web: Project Factory UI (localhost) ─────────────────────────
+# `connect web` mở form tại http://127.0.0.1:{port}: nhập requirement,
+# chọn AI provider + deploy target → clone template, sinh config, chạy
+# full pipeline, xem log + kết quả ngay trên trang.
+web:
+  port: 4000
+  # Template để clone khi tạo project mới (path local hoặc git URL)
+  templateRepo: /Users/sang/work/web-automation-develop-template
+  # Repo project mới + config/log/summary sinh ra nằm ở đây
+  workspaceDir: projects
+
 # ── connect pipeline: cả vòng đời từ MỘT chỗ config ─────────────────────
 # `connect pipeline --yes` chạy: requirement → System A agents build →
 # deploy → AI test → write-back. Mọi stage gọi script CỦA CHÍNH System A
