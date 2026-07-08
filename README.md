@@ -194,6 +194,24 @@ AI provider CLIs and deploy credentials must already work on this
 machine. Job state survives server restarts
 (`{workspaceDir}/{name}.state.json` + `.log`).
 
+## Troubleshooting local deploys
+
+- **Docker daemon not reachable** — start Docker Desktop or `colima
+  start` before the deploy stage; verify with `docker ps`.
+- **Missing SESSION_SECRET / POSTGRES_PASSWORD** — handled automatically
+  for `local` targets: the connector generates `.env` from
+  `.env.example` with random dev secrets. Cloud targets are on purpose
+  NOT auto-filled.
+- **`Bind for 127.0.0.1:5433 failed: port is already allocated`** — the
+  System A template hardcodes the postgres host port 5433 in
+  `docker-compose.yml`, so only one template-based stack can run locally
+  at a time. Find the holder with `docker ps --filter "publish=5433"`
+  and `docker compose down` it (often a previously-run template checkout
+  or another factory project). To run several projects side by side,
+  parametrize the port in the template's compose file
+  (`"127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"`) — a one-time template
+  change owned by you, not something the connector edits by itself.
+
 Every run writes `runs/summary-<timestamp>.json` with per-stage timings.
 
 ## Write-back behavior
