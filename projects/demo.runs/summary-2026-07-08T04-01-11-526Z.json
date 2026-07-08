@@ -1,0 +1,70 @@
+{
+  "project": "demo",
+  "url": "http://localhost:3000",
+  "startedAt": "2026-07-08T04:01:11.526Z",
+  "finishedAt": "2026-07-08T04:03:10.847Z",
+  "stages": [
+    {
+      "stage": "input-gen",
+      "startedAt": "2026-07-08T04:01:11.527Z",
+      "finishedAt": "2026-07-08T04:01:11.531Z",
+      "durationMs": 4,
+      "status": "ok"
+    },
+    {
+      "stage": "system-b-workflow",
+      "startedAt": "2026-07-08T04:01:11.531Z",
+      "finishedAt": "2026-07-08T04:03:10.838Z",
+      "durationMs": 119307,
+      "status": "ok"
+    },
+    {
+      "stage": "collect",
+      "startedAt": "2026-07-08T04:03:10.838Z",
+      "finishedAt": "2026-07-08T04:03:10.846Z",
+      "durationMs": 8,
+      "status": "ok"
+    },
+    {
+      "stage": "write-back",
+      "startedAt": "2026-07-08T04:03:10.846Z",
+      "finishedAt": "2026-07-08T04:03:10.847Z",
+      "durationMs": 1,
+      "status": "ok"
+    }
+  ],
+  "runIds": [
+    "R-20260708-040131-58b0",
+    "R-20260708-040156-5026",
+    "R-20260708-040227-7e7b",
+    "R-20260708-040302-d944"
+  ],
+  "totals": [
+    {
+      "total": 19,
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "total": 20,
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "total": 29,
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "total": 24,
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "bugsWritten": [],
+  "skippedDuplicates": 0
+}
