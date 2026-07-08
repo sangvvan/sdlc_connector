@@ -108,6 +108,35 @@ describe('config pipeline block', () => {
     }
   });
 
+  it('accepts the legacy build.command shape (pre-v0.2 configs)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
+    try {
+      const file = join(dir, 'c.yaml');
+      writeFileSync(
+        file,
+        [
+          'systemA:',
+          '  repoPath: /a',
+          'systemB:',
+          '  repoPath: /b',
+          'pipeline:',
+          '  project: demo',
+          '  build:',
+          '    command: ["scripts/legacy/run.sh", "/feature", "all"]',
+          '  deploy:',
+          '    command: ["scripts/deploy.sh", "local"]',
+          '    url: http://localhost:3000',
+        ].join('\n'),
+      );
+      const config = loadConfig(file);
+      expect(config.pipeline?.build?.commands).toEqual([
+        ['scripts/legacy/run.sh', '/feature', 'all'],
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('stays optional — configs without pipeline still load', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cfg-'));
     try {

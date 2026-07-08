@@ -57,10 +57,19 @@ const configSchema = z.object({
       // relative path, {requirementFile} = absolute source file,
       // {requirement} = raw text (avoid for long documents — System A's
       // scripts choke on huge/quoted argv; reference the doc instead).
+      // `command` (singular) is the pre-v0.2 shape, still accepted.
       build: z
         .object({
           requirementDoc: z.string().default('docs/requirements/PS-001.md'),
-          commands: z.array(z.array(z.string().min(1)).min(1)).min(1),
+          commands: z.array(z.array(z.string().min(1)).min(1)).optional(),
+          command: z.array(z.string().min(1)).min(1).optional(),
+        })
+        .transform((b) => ({
+          requirementDoc: b.requirementDoc,
+          commands: b.commands ?? (b.command ? [b.command] : []),
+        }))
+        .refine((b) => b.commands.length > 0, {
+          message: 'build.commands là bắt buộc (hoặc build.command dạng cũ)',
         })
         .optional(),
       deploy: z.object({
