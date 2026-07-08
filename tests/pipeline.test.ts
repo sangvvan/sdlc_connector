@@ -7,22 +7,28 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 describe('substituteTokens', () => {
-  it('replaces {requirement} and {requirementFile} in the configured command', () => {
+  const tokens = {
+    requirement: 'Build a course catalog',
+    requirementFile: '/abs/req.md',
+    requirementDoc: 'docs/requirements/PS-001.md',
+  };
+
+  it('replaces all three tokens in the configured command', () => {
     const out = substituteTokens(
-      ['scripts/legacy/run.sh', '/feature', '{requirement}', '--file={requirementFile}'],
-      'Build a course catalog',
-      '/abs/req.md',
+      ['run.sh', '/ps', 'Generate REQs from {requirementDoc}', '--file={requirementFile}', '{requirement}'],
+      tokens,
     );
     expect(out).toEqual([
-      'scripts/legacy/run.sh',
-      '/feature',
-      'Build a course catalog',
+      'run.sh',
+      '/ps',
+      'Generate REQs from docs/requirements/PS-001.md',
       '--file=/abs/req.md',
+      'Build a course catalog',
     ]);
   });
 
   it('leaves commands without tokens untouched', () => {
-    expect(substituteTokens(['scripts/deploy.sh', 'local'], 'x', '/y')).toEqual([
+    expect(substituteTokens(['scripts/deploy.sh', 'local'], tokens)).toEqual([
       'scripts/deploy.sh',
       'local',
     ]);
@@ -84,7 +90,9 @@ describe('config pipeline block', () => {
           '  project: demo',
           '  requirementFile: requirement.md',
           '  build:',
-          '    command: ["scripts/legacy/run.sh", "/feature", "{requirement}"]',
+          '    commands:',
+          '      - ["scripts/legacy/run.sh", "/ps", "Generate REQs from {requirementDoc}"]',
+          '      - ["scripts/legacy/run.sh", "/feature", "all"]',
           '  deploy:',
           '    command: ["scripts/deploy.sh", "local"]',
           '    url: http://localhost:3000',
@@ -93,7 +101,8 @@ describe('config pipeline block', () => {
       const config = loadConfig(file);
       expect(config.pipeline?.project).toBe('demo');
       expect(config.pipeline?.deploy.healthTimeoutSec).toBe(180);
-      expect(config.pipeline?.build?.command[2]).toBe('{requirement}');
+      expect(config.pipeline?.build?.requirementDoc).toBe('docs/requirements/PS-001.md');
+      expect(config.pipeline?.build?.commands).toHaveLength(2);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

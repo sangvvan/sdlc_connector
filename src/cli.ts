@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { loadConfig, type ConnectorConfig } from './config.js';
@@ -276,9 +276,22 @@ program
           const reqFileAbs = resolve(reqFile);
           const requirement = readFileSync(reqFileAbs, 'utf8').trim();
           phase(1, 3, 'BUILD — System A agents chạy từ requirement');
-          const command = substituteTokens(p.build.command, requirement, reqFileAbs);
-          cmd(command.join(' '));
-          await runStageCommand(command, repoA);
+
+          // Write the requirement doc into the project repo (template
+          // convention) so commands can reference it by path instead of
+          // passing a huge document through argv.
+          const docRel = p.build.requirementDoc;
+          const docAbs = join(repoA, docRel);
+          mkdirSync(dirname(docAbs), { recursive: true });
+          writeFileSync(docAbs, requirement + '\n', 'utf8');
+          ok(`Requirement written to ${docRel}`);
+
+          const tokens = { requirement, requirementFile: reqFileAbs, requirementDoc: docRel };
+          for (const raw of p.build.commands) {
+            const command = substituteTokens(raw, tokens);
+            cmd(command.join(' '));
+            await runStageCommand(command, repoA);
+          }
           ok('System A pipeline finished');
         } else {
           phase(1, 3, 'BUILD — bỏ qua' + (opts.skipBuild ? ' (--skip-build)' : ' (không cấu hình)'));

@@ -119,12 +119,20 @@ export function buildProjectConfigYaml(
     pipeline: {
       project: req.name,
       requirementFile: paths.requirementFile,
+      // The connector writes the requirement to requirementDoc first,
+      // then: /ps turns it into REQ-*.md, /feature all runs the full
+      // phase pipeline for every generated requirement. run.sh only
+      // accepts short prompts/ids as argv — never the whole document.
       build: {
-        command: [
-          'scripts/legacy/run.sh',
-          '/feature',
-          '{requirement}',
-          `--provider=${req.aiProvider}`,
+        requirementDoc: 'docs/requirements/PS-001.md',
+        commands: [
+          [
+            'scripts/legacy/run.sh',
+            '/ps',
+            'Generate versioned requirements (REQ-*.md) from {requirementDoc}',
+            `--provider=${req.aiProvider}`,
+          ],
+          ['scripts/legacy/run.sh', '/feature', 'all', `--provider=${req.aiProvider}`],
         ],
       },
       deploy: {

@@ -75,10 +75,19 @@ pipeline:
   project: demo
   # Requirement mặc định (ghi đè per-run bằng --requirement <file>)
   requirementFile: requirement.md
-  # Chạy trong repo System A. {requirement} = nội dung file requirement,
-  # {requirementFile} = đường dẫn tuyệt đối của nó.
+  # BUILD: connector ghi requirement vào `requirementDoc` (trong repo A,
+  # theo convention của template) rồi chạy lần lượt `commands` trong repo
+  # A. Token: {requirementDoc} = path tương đối của doc vừa ghi,
+  # {requirementFile} = path tuyệt đối file gốc. KHÔNG dùng {requirement}
+  # (cả văn bản) trong command — run.sh của System A chỉ nhận prompt
+  # ngắn/ID, văn bản dài làm vỡ xargs của nó.
   build:
-    command: ["scripts/legacy/run.sh", "/feature", "{requirement}"]
+    requirementDoc: docs/requirements/PS-001.md
+    commands:
+      # Phase 0: problem statement → REQ-*.md
+      - ["scripts/legacy/run.sh", "/ps", "Generate versioned requirements (REQ-*.md) from {requirementDoc}", "--provider=claude"]
+      # Full pipeline (BA → ... → DevOps) cho mọi requirement vừa sinh
+      - ["scripts/legacy/run.sh", "/feature", "all", "--provider=claude"]
   deploy:
     command: ["scripts/deploy.sh", "local"]
     # URL app sau deploy — tự động thành --url cho stage test

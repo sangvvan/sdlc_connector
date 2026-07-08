@@ -50,12 +50,17 @@ const configSchema = z.object({
       project: z.string().min(1),
       // Default requirement source; overridable per run with --requirement.
       requirementFile: z.string().optional(),
-      // Runs inside System A's repo. "{requirement}" is replaced with the
-      // requirement text, "{requirementFile}" with its absolute path.
-      // Default drives System A's own phase pipeline (scripts/legacy/run.sh).
+      // Build stage: the connector first writes the requirement into
+      // `requirementDoc` (relative to System A's repo — template
+      // convention docs/requirements/PS-001.md), then runs `commands` in
+      // order inside System A's repo. Tokens: {requirementDoc} = that
+      // relative path, {requirementFile} = absolute source file,
+      // {requirement} = raw text (avoid for long documents — System A's
+      // scripts choke on huge/quoted argv; reference the doc instead).
       build: z
         .object({
-          command: z.array(z.string().min(1)).min(1),
+          requirementDoc: z.string().default('docs/requirements/PS-001.md'),
+          commands: z.array(z.array(z.string().min(1)).min(1)).min(1),
         })
         .optional(),
       deploy: z.object({

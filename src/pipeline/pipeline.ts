@@ -6,14 +6,22 @@ import { execa } from 'execa';
  * deploy.sh) as subprocesses, then hands off to the existing test chain.
  */
 
-/** Replace {requirement} / {requirementFile} tokens in a configured command. */
-export function substituteTokens(
-  command: string[],
-  requirement: string,
-  requirementFileAbs: string,
-): string[] {
+export interface RequirementTokens {
+  /** Raw requirement text — avoid in commands for long documents. */
+  requirement: string;
+  /** Absolute path of the source requirement file. */
+  requirementFile: string;
+  /** Path of the doc written into System A's repo (relative to it). */
+  requirementDoc: string;
+}
+
+/** Replace {requirement} / {requirementFile} / {requirementDoc} tokens. */
+export function substituteTokens(command: string[], tokens: RequirementTokens): string[] {
   return command.map((part) =>
-    part.replaceAll('{requirement}', requirement).replaceAll('{requirementFile}', requirementFileAbs),
+    part
+      .replaceAll('{requirement}', tokens.requirement)
+      .replaceAll('{requirementFile}', tokens.requirementFile)
+      .replaceAll('{requirementDoc}', tokens.requirementDoc),
   );
 }
 

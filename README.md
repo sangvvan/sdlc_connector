@@ -107,7 +107,10 @@ pipeline:
   project: demo
   requirementFile: requirement.md            # what to build
   build:
-    command: ["scripts/legacy/run.sh", "/feature", "{requirement}"]
+    requirementDoc: docs/requirements/PS-001.md   # written into System A's repo
+    commands:
+      - ["scripts/legacy/run.sh", "/ps", "Generate versioned requirements (REQ-*.md) from {requirementDoc}", "--provider=claude"]
+      - ["scripts/legacy/run.sh", "/feature", "all", "--provider=claude"]
   deploy:
     command: ["scripts/deploy.sh", "local"]
     url: http://localhost:3000
@@ -123,10 +126,17 @@ npx tsx src/cli.ts pipeline --requirement docs/req-v2.md   # per-run override
 
 Stages (each visible as a `█ GIAI ĐOẠN x/3` banner):
 
-1. **BUILD** — runs System A's *own* phase driver
-   (`run.sh /feature "<requirement>"`: PS → BA → Planning → Design →
-   Implementation → QA → DevOps) inside System A's repo. The connector
-   adds nothing of its own here — it only invokes what System A documents.
+1. **BUILD** — the connector writes the requirement into
+   `build.requirementDoc` (template convention:
+   `docs/requirements/PS-001.md`), then runs `build.commands` in order —
+   by default System A's own `run.sh /ps …` (problem statement →
+   `REQ-*.md`) followed by `run.sh /feature all` (BA → Planning → Design
+   → Implementation → QA → DevOps for every requirement). The connector
+   adds nothing of its own here — it only invokes what System A
+   documents. Important: `run.sh` accepts only short prompts/IDs as
+   arguments — passing a whole document as argv breaks its internal
+   parsing, which is why the doc is written to a file and referenced by
+   path via the `{requirementDoc}` token.
 2. **DEPLOY** — runs System A's deploy script, then polls `deploy.url`
    until the app answers (any HTTP status < 500) or `healthTimeoutSec`
    expires.

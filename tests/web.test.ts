@@ -92,7 +92,7 @@ describe('buildProjectConfigYaml', () => {
       crawl: { maxPages: number };
       pipeline: {
         project: string;
-        build: { command: string[] };
+        build: { requirementDoc: string; commands: string[][] };
         deploy: { command: string[]; url: string };
       };
     };
@@ -100,7 +100,21 @@ describe('buildProjectConfigYaml', () => {
     expect(doc.systemB.repoPath).toBe('/opt/system-b');
     expect(doc.crawl.maxPages).toBe(30); // inherited defaults
     expect(doc.pipeline.project).toBe('course-catalog');
-    expect(doc.pipeline.build.command).toContain('--provider=codex');
+    expect(doc.pipeline.build.requirementDoc).toBe('docs/requirements/PS-001.md');
+    expect(doc.pipeline.build.commands).toHaveLength(2);
+    expect(doc.pipeline.build.commands[0]).toContain('/ps');
+    expect(doc.pipeline.build.commands[0]).toContain('--provider=codex');
+    expect(doc.pipeline.build.commands[1]).toEqual([
+      'scripts/legacy/run.sh',
+      '/feature',
+      'all',
+      '--provider=codex',
+    ]);
+    // run.sh chokes on long/quoted argv — the raw requirement text must
+    // never appear in a generated command.
+    for (const c of doc.pipeline.build.commands) {
+      expect(c.join(' ')).not.toContain('{requirement}');
+    }
     expect(doc.pipeline.deploy.command).toEqual(['scripts/deploy.sh', 'staging', 'vercel']);
     expect(doc.pipeline.deploy.url).toBe('http://localhost:3000');
   });
