@@ -1,3 +1,6 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { join } from 'node:path';
 import { execa } from 'execa';
 
 /**
@@ -38,6 +41,36 @@ export async function runStageCommand(command: string[], cwd: string): Promise<v
       `Stage command failed (exit ${result.exitCode}): ${command.join(' ')} (cwd: ${cwd})`,
     );
   }
+}
+
+/**
+ * For LOCAL deploys only: a factory-cloned project has .env.example but
+ * no .env, and System A's deploy.sh preflight hard-fails on missing
+ * SESSION_SECRET / POSTGRES_PASSWORD. Generate a dev .env by replacing
+ * every CHANGE_ME_* placeholder with a random secret — the same
+ * placeholder gets the same value everywhere, so pairs like
+ * POSTGRES_PASSWORD and the password inside DATABASE_URL stay in sync.
+ * Never touches an existing .env, and never runs for cloud targets
+ * (real secrets there are the user's call, not something to fabricate).
+ */
+export function ensureDevEnv(repoAPath: string): 'created' | 'exists' | 'no-template' {
+  const envPath = join(repoAPath, '.env');
+  if (existsSync(envPath)) return 'exists';
+  const examplePath = join(repoAPath, '.env.example');
+  if (!existsSync(examplePath)) return 'no-template';
+
+  const example = readFileSync(examplePath, 'utf8');
+  const secrets = new Map<string, string>();
+  const env = example.replace(/CHANGE_ME\w*/g, (token) => {
+    let v = secrets.get(token);
+    if (!v) {
+      v = randomBytes(24).toString('hex');
+      secrets.set(token, v);
+    }
+    return v;
+  });
+  writeFileSync(envPath, env, { encoding: 'utf8', mode: 0o600 });
+  return 'created';
 }
 
 /**

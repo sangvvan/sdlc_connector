@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { substituteTokens, waitForUrl } from '../src/pipeline/pipeline.js';
+import { ensureDevEnv, substituteTokens, waitForUrl } from '../src/pipeline/pipeline.js';
 import { loadConfig } from '../src/config.js';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -71,6 +71,54 @@ describe('waitForUrl', () => {
   it('keeps polling through 5xx until timeout', async () => {
     status = 503;
     await expect(waitForUrl(url, 1, 100)).rejects.toThrow(/HTTP 503/);
+  });
+});
+
+describe('ensureDevEnv', () => {
+  const EXAMPLE = [
+    'NODE_ENV=development',
+    'POSTGRES_PASSWORD=CHANGE_ME_use_a_strong_password',
+    'DATABASE_URL=postgresql://app:CHANGE_ME_use_a_strong_password@localhost:5433/app_dev',
+    'SESSION_SECRET=CHANGE_ME_run_openssl_rand_hex_32',
+  ].join('\n');
+
+  it('creates .env from .env.example with consistent random secrets', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'env-'));
+    try {
+      writeFileSync(join(dir, '.env.example'), EXAMPLE);
+      expect(ensureDevEnv(dir)).toBe('created');
+      const env = readFileSync(join(dir, '.env'), 'utf8');
+      expect(env).not.toContain('CHANGE_ME');
+      const pw = /POSTGRES_PASSWORD=(\w+)/.exec(env)![1];
+      // the same placeholder gets the same generated value everywhere
+      expect(env).toContain(`postgresql://app:${pw}@localhost:5433/app_dev`);
+      const secret = /SESSION_SECRET=(\w+)/.exec(env)![1];
+      expect(secret).not.toBe(pw);
+      expect(secret!.length).toBeGreaterThanOrEqual(32);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never overwrites an existing .env', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'env-'));
+    try {
+      writeFileSync(join(dir, '.env.example'), EXAMPLE);
+      writeFileSync(join(dir, '.env'), 'SESSION_SECRET=mine\n');
+      expect(ensureDevEnv(dir)).toBe('exists');
+      expect(readFileSync(join(dir, '.env'), 'utf8')).toBe('SESSION_SECRET=mine\n');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does nothing when the repo has no .env.example', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'env-'));
+    try {
+      expect(ensureDevEnv(dir)).toBe('no-template');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -16,7 +16,7 @@ import { nextBugNumber, existingSourceKeys } from './writeback/numbering.js';
 import { buildBacklogAppendix, appendToBacklog } from './writeback/backlog.js';
 import { confirmWriteback } from './writeback/gate.js';
 import { RunSummary } from './report/summary.js';
-import { runStageCommand, substituteTokens, waitForUrl } from './pipeline/pipeline.js';
+import { ensureDevEnv, runStageCommand, substituteTokens, waitForUrl } from './pipeline/pipeline.js';
 import { banner, phase, ok, warn, fail, cmd } from './ui.js';
 
 function loadConfigOrDie(configPath: string): ConnectorConfig {
@@ -300,6 +300,12 @@ program
         // ── GIAI ĐOẠN 2: deploy + health check ──
         if (!opts.skipDeploy) {
           phase(2, 3, 'DEPLOY — chạy script deploy của System A');
+          if (p.deploy.command.includes('local')) {
+            const envState = ensureDevEnv(repoA);
+            if (envState === 'created') {
+              ok('.env generated from .env.example (random dev secrets — local only)');
+            }
+          }
           cmd(p.deploy.command.join(' '));
           await runStageCommand(p.deploy.command, repoA);
           ok(`Deploy command finished — waiting for ${p.deploy.url} (max ${p.deploy.healthTimeoutSec}s)`);
