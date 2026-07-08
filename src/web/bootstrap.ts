@@ -35,8 +35,23 @@ export interface NewProjectRequest {
   aiProvider: string;
   deployTarget: string;
   url: string;
+  /**
+   * Optional GitHub repo to publish the new project to
+   * (https://github.com/owner/repo or git@github.com:owner/repo.git).
+   * Existing repo → used as-is; missing → created via `gh repo create`.
+   */
+  gitRemote?: string;
   skipBuild?: boolean;
   skipDeploy?: boolean;
+}
+
+/** Parse a GitHub URL (https or ssh) into owner/repo; undefined if not GitHub. */
+export function parseGitHubRepo(url: string): { owner: string; repo: string } | undefined {
+  const m = /^(?:https:\/\/github\.com\/|git@github\.com:)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(
+    url.trim(),
+  );
+  if (!m) return undefined;
+  return { owner: m[1]!, repo: m[2]! };
 }
 
 const NAME_RE = /^[a-z][a-z0-9-]{0,39}$/;
@@ -60,6 +75,11 @@ export function validateRequest(req: NewProjectRequest): string[] {
     new URL(req.url);
   } catch {
     problems.push('URL app không hợp lệ (vd: http://localhost:3000)');
+  }
+  if (req.gitRemote?.trim() && !parseGitHubRepo(req.gitRemote)) {
+    problems.push(
+      'GitHub repo không hợp lệ — dùng https://github.com/owner/repo hoặc git@github.com:owner/repo.git',
+    );
   }
   return problems;
 }

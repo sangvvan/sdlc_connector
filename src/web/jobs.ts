@@ -1,8 +1,16 @@
-import { createWriteStream, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  createWriteStream,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { execa } from 'execa';
 import type { ConnectorConfig } from '../config.js';
-import { projectPaths, type NewProjectRequest, type ProjectPaths } from './bootstrap.js';
+import { parseGitHubRepo, projectPaths, type NewProjectRequest, type ProjectPaths } from './bootstrap.js';
 
 /**
  * Job runner for `connect web`. One job = one project kickoff:
@@ -32,6 +40,8 @@ export interface JobState {
     totals?: unknown;
     bugsWritten?: string[];
     runIds?: string[];
+    /** Set when a gitRemote was requested: did the final push succeed? */
+    pushed?: boolean;
   };
 }
 
@@ -86,14 +96,19 @@ function newestSummary(summaryDir: string): string | undefined {
   }
 }
 
-async function runStep(
+function note(paths: ProjectPaths, msg: string): void {
+  appendFileSync(paths.logFile, `${msg}\n`, 'utf8');
+}
+
+/** Run a step and return its exit code (logged, never throws). */
+async function runStepSoft(
   paths: ProjectPaths,
   state: JobState,
   step: string,
   bin: string,
   args: string[],
   cwd: string,
-): Promise<void> {
+): Promise<number> {
   state.step = step;
   saveState(paths, state);
   const log = createWriteStream(paths.logFile, { flags: 'a' });
@@ -102,9 +117,93 @@ async function runStep(
   child.all?.pipe(log, { end: false });
   const result = await child;
   log.end();
-  if ((result.exitCode ?? -1) !== 0) {
-    throw new Error(`${step} failed (exit ${result.exitCode}) — see log`);
+  return result.exitCode ?? -1;
+}
+
+async function runStep(
+  paths: ProjectPaths,
+  state: JobState,
+  step: string,
+  bin: string,
+  args: string[],
+  cwd: string,
+): Promise<void> {
+  const exitCode = await runStepSoft(paths, state, step, bin, args, cwd);
+  if (exitCode !== 0) {
+    throw new Error(`${step} failed (exit ${exitCode}) — see log`);
   }
+}
+
+const GIT_ID = ['-c', 'user.name=sdlc-connector', '-c', 'user.email=connector@localhost'];
+
+/**
+ * Detach the fresh clone from the template's history and point it at the
+ * user's GitHub repo — using the existing repo when reachable, creating
+ * it (private) via `gh repo create` when not. Linking problems are
+ * logged as warnings, never fatal: the built project on disk is the
+ * primary deliverable, publishing it is best-effort.
+ */
+async function linkGitRemote(
+  paths: ProjectPaths,
+  state: JobState,
+  remote: string,
+  freshClone: boolean,
+): Promise<void> {
+  if (freshClone) {
+    rmSync(join(paths.dir, '.git'), { recursive: true, force: true });
+    await runStep(paths, state, 'git-init', 'git', ['init', '-b', 'main'], paths.dir);
+    await runStep(paths, state, 'git-init', 'git', ['add', '-A'], paths.dir);
+    await runStep(
+      paths,
+      state,
+      'git-init',
+      'git',
+      [...GIT_ID, 'commit', '-m', `Initial commit from SDLC template (${state.name})`],
+      paths.dir,
+    );
+  }
+
+  const reachable =
+    (await runStepSoft(paths, state, 'git-remote', 'git', ['ls-remote', remote], paths.dir)) === 0;
+  if (!reachable) {
+    const gh = parseGitHubRepo(remote);
+    if (!gh) {
+      note(paths, `⚠ Không parse được ${remote} — bỏ qua việc tạo repo`);
+      return;
+    }
+    note(paths, `Repo chưa tồn tại — tạo mới (private): ${gh.owner}/${gh.repo}`);
+    const created = await runStepSoft(
+      paths,
+      state,
+      'git-remote',
+      'gh',
+      ['repo', 'create', `${gh.owner}/${gh.repo}`, '--private'],
+      paths.dir,
+    );
+    if (created !== 0) {
+      note(paths, '⚠ `gh repo create` thất bại (gh chưa cài/chưa login?) — project vẫn build tiếp, chỉ không push được');
+      return;
+    }
+  }
+  await runStepSoft(paths, state, 'git-remote', 'git', ['remote', 'remove', 'origin'], paths.dir);
+  await runStep(paths, state, 'git-remote', 'git', ['remote', 'add', 'origin', remote], paths.dir);
+}
+
+/** Commit everything the pipeline produced and push (best-effort). */
+async function publishToRemote(paths: ProjectPaths, state: JobState): Promise<boolean> {
+  await runStepSoft(paths, state, 'publish', 'git', ['add', '-A'], paths.dir);
+  await runStepSoft(
+    paths,
+    state,
+    'publish',
+    'git',
+    [...GIT_ID, 'commit', '-m', `AI build via sdlc-connector pipeline (${state.name})`],
+    paths.dir,
+  ); // exit 1 when nothing to commit — fine
+  const pushed =
+    (await runStepSoft(paths, state, 'publish', 'git', ['push', '-u', 'origin', 'main'], paths.dir)) === 0;
+  if (!pushed) note(paths, '⚠ push thất bại — kiểm tra quyền/`gh auth status`, rồi push tay từ thư mục project');
+  return pushed;
 }
 
 /**
@@ -130,12 +229,17 @@ export function startJob(
 
   void (async () => {
     try {
+      let freshClone = false;
       if (!existsSync(paths.dir)) {
         const template = config.web.templateRepo;
         if (!template) {
           throw new Error('web.templateRepo chưa cấu hình trong connector.config.yaml');
         }
         await runStep(paths, state, 'clone', 'git', ['clone', '--depth', '1', template, paths.dir], connectorRoot);
+        freshClone = true;
+      }
+      if (req.gitRemote?.trim()) {
+        await linkGitRemote(paths, state, req.gitRemote.trim(), freshClone);
       }
       if (!existsSync(join(paths.dir, 'node_modules'))) {
         await runStep(paths, state, 'install', 'npm', ['install'], paths.dir);
@@ -153,6 +257,11 @@ export function startJob(
         connectorRoot,
       );
 
+      let pushed: boolean | undefined;
+      if (req.gitRemote?.trim()) {
+        pushed = await publishToRemote(paths, state);
+      }
+
       const summaryPath = newestSummary(paths.summaryDir);
       if (summaryPath) {
         const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as Record<string, unknown>;
@@ -161,6 +270,7 @@ export function startJob(
           totals: summary.totals,
           bugsWritten: summary.bugsWritten as string[] | undefined,
           runIds: summary.runIds as string[] | undefined,
+          ...(pushed !== undefined ? { pushed } : {}),
         };
       }
       state.status = 'succeeded';

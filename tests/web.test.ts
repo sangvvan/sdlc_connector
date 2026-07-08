@@ -7,6 +7,7 @@ import type { ConnectorConfig } from '../src/config.js';
 import {
   buildProjectConfigYaml,
   composeRequirement,
+  parseGitHubRepo,
   projectPaths,
   validateRequest,
   writeProjectFiles,
@@ -65,6 +66,35 @@ describe('validateRequest', () => {
 
   it('rejects an empty requirement', () => {
     expect(validateRequest({ ...validReq(), requirement: '  ' })).toHaveLength(1);
+  });
+
+  it('accepts a valid GitHub remote and rejects garbage', () => {
+    expect(validateRequest({ ...validReq(), gitRemote: 'https://github.com/me/proj' })).toEqual([]);
+    expect(validateRequest({ ...validReq(), gitRemote: '' })).toEqual([]);
+    expect(validateRequest({ ...validReq(), gitRemote: 'not-a-repo' })).toHaveLength(1);
+  });
+});
+
+describe('parseGitHubRepo', () => {
+  it('parses https and ssh forms, with or without .git', () => {
+    expect(parseGitHubRepo('https://github.com/sangvvan/my-app')).toEqual({
+      owner: 'sangvvan',
+      repo: 'my-app',
+    });
+    expect(parseGitHubRepo('https://github.com/sangvvan/my-app.git/')).toEqual({
+      owner: 'sangvvan',
+      repo: 'my-app',
+    });
+    expect(parseGitHubRepo('git@github.com:sangvvan/my.app.git')).toEqual({
+      owner: 'sangvvan',
+      repo: 'my.app',
+    });
+  });
+
+  it('rejects non-GitHub or malformed urls', () => {
+    expect(parseGitHubRepo('https://gitlab.com/a/b')).toBeUndefined();
+    expect(parseGitHubRepo('sangvvan/my-app')).toBeUndefined();
+    expect(parseGitHubRepo('https://github.com/only-owner')).toBeUndefined();
   });
 });
 

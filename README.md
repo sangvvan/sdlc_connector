@@ -171,8 +171,15 @@ npx tsx src/cli.ts web        # → http://127.0.0.1:4000
 
 Form: project name, problem statement (paste or upload .md), optional
 tech stack, AI provider (claude default / codex / gemini / opencode),
-deploy target (local / staging / production × aws / azure / vercel), and
-the app URL. Submit and the server:
+deploy target (local / staging / production × aws / azure / vercel),
+the app URL, and an optional **GitHub repo** (existing repo → used
+as-is; missing → created private via `gh repo create`, so `gh auth
+login` must work on this machine). When a repo is given, the clone is
+detached from the template's history (fresh `git init` + initial
+commit as `sdlc-connector`), and after the pipeline finishes everything
+the AI built is committed and pushed to `main`. Repo linking/push
+failures are warnings in the log, never job failures. Submit and the
+server:
 
 1. clones `templateRepo` into `{workspaceDir}/{name}/` (a fresh System A
    project repo),
