@@ -1,0 +1,41 @@
+systemA:
+  repoPath: /Users/hikaruvo/projects/sdlc_connector-1/projects/demo
+systemB:
+  repoPath: /Users/hikaruvo/projects/ai-automation-framework
+  inputsDir: inputs/projects
+  reportsDir: reports
+crawl:
+  maxPages: 50
+  maxDepth: 3
+generation:
+  maxScenariosPerPage: 14
+  fallbackSmoke: true
+run:
+  testLevel: system
+  browsers:
+    - chromium
+  nonFunctional:
+    a11y: true
+    vitals: true
+    securityHeaders: true
+summaryDir: /Users/hikaruvo/projects/sdlc_connector-1/projects/demo.runs
+pipeline:
+  project: demo
+  requirementFile: /Users/hikaruvo/projects/sdlc_connector-1/projects/demo.requirement.md
+  build:
+    requirementDoc: docs/requirements/PS-001.md
+    commands:
+      - - scripts/legacy/run.sh
+        - /ps
+        - Generate versioned requirements (REQ-*.md) from {requirementDoc}
+        - --provider=claude
+      - - scripts/legacy/run.sh
+        - /feature
+        - all
+        - --provider=claude
+  deploy:
+    command:
+      - scripts/deploy.sh
+      - local
+    url: http://localhost:3000
+    healthTimeoutSec: 300
