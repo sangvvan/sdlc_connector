@@ -3,15 +3,20 @@
 # per-run values (--url, --project, --yes).
 
 systemA:
-  # Absolute path to the web-automation-develop-template checkout
-  repoPath: /Users/sang/work/web-automation-develop-template
+  # Chỉ dùng khi chạy `connect run`/`pipeline` TRỰC TIẾP trên một project
+  # có sẵn. Project tạo bằng Project Factory (connect new / connect web)
+  # tự sinh config riêng trỏ vào repo của nó — không đụng giá trị này.
+  repoPath: /path/to/your-project-repo
   # Relative to repoPath (defaults shown)
   bugsDir: docs/bugs
   backlogFile: docs/sprints/backlog.md
 
 systemB:
-  # Absolute path to the ai-automation-framework checkout
-  repoPath: /Users/sang/work/ai-automation-framework
+  # Nơi ai-automation-framework nằm trên máy. KHÔNG cần clone tay:
+  # nếu thư mục chưa tồn tại, connector tự clone từ repoUrl + npm install
+  # lần đầu tiên chạy.
+  repoPath: tools/ai-automation-framework
+  repoUrl: https://github.com/sangvvan/ai-automation-framework
   # Relative to repoPath (defaults shown)
   inputsDir: inputs/projects
   reportsDir: reports
@@ -62,8 +67,9 @@ summaryDir: runs
 # full pipeline, xem log + kết quả ngay trên trang.
 web:
   port: 4000
-  # Template để clone khi tạo project mới (path local hoặc git URL)
-  templateRepo: /Users/sang/work/web-automation-develop-template
+  # Template để clone khi tạo project mới — git URL là đủ, không cần
+  # checkout local
+  templateRepo: https://github.com/sangvvan/web-automation-develop-template
   # Repo project mới + config/log/summary sinh ra nằm ở đây
   workspaceDir: projects
 

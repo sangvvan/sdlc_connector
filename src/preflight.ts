@@ -53,7 +53,9 @@ export function preflight(config: ConnectorConfig): PreflightIssue[] {
   if (!dirExists(b.repoPath)) {
     issues.push({
       level: 'error',
-      message: `System B repo not found: ${b.repoPath} — fix systemB.repoPath in connector.config.yaml`,
+      message:
+        `System B repo not found: ${b.repoPath} — fix systemB.repoPath in connector.config.yaml, ` +
+        `hoặc khai systemB.repoUrl để connector tự clone lần đầu`,
     });
   } else {
     if (!existsSync(join(b.repoPath, 'package.json'))) {

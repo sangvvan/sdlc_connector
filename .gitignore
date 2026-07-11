@@ -3,3 +3,4 @@ runs/
 *.log
 connector.config.yaml
 projects/
+tools/

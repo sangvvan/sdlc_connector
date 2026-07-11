@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import { loadConfig, type ConnectorConfig } from './config.js';
 import { preflight, hasErrors } from './preflight.js';
+import { ensureSystemB } from './provision.js';
 import { applyInputPlan, buildInputYaml, planInput, type AppliedInput } from './forward/inputgen.js';
 import { isNonLocalTarget, plannedRecipes, rolesFromDiscovery } from './discover/discover.js';
 import { invokeSystemB } from './forward/invoke.js';
@@ -237,6 +238,7 @@ program
   .option('--yes', 'skip the human confirmation gate (demo/CI)', false)
   .action(async (opts: { url: string; project: string; yes: boolean }) => {
     const config = loadConfigOrDie(program.opts().config);
+    await ensureSystemB(config);
     runPreflightOrDie(config);
     await runChain(config, opts);
   });
@@ -261,6 +263,7 @@ program
         );
         process.exit(1);
       }
+      await ensureSystemB(config);
       runPreflightOrDie(config);
       const repoA = config.systemA.repoPath;
 

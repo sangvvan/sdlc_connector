@@ -14,22 +14,32 @@ live output → parse B's report → propose BUG/backlog entries back into A's
 
 See `PROBLEM_STATEMENT.md` (why) and `CLAUDE.md` (how) for full context.
 
-## Setup
+## Setup — clone đúng MỘT repo
 
 ```bash
+git clone https://github.com/sangvvan/sdlc_connector && cd sdlc_connector
 npm install
-cp connector.config.example.yaml connector.config.yaml
-# edit connector.config.yaml: absolute paths to both repos, roles, defaults
+cp connector.config.example.yaml connector.config.yaml   # defaults chạy được luôn
 ```
 
-Prerequisites:
+That's it. The other two repos need no manual cloning:
 
-- Node.js 20+
-- Both repos checked out locally; System B has had `npm install` run
-- For projects built from the System A template: **nothing else** — roles
-  and auth recipes are discovered automatically (see below). For other
-  projects: auth recipes prepared in System B's format, referenced from
-  `roles` in the connector config.
+- **System B** (`ai-automation-framework`): auto-cloned to
+  `systemB.repoPath` from `systemB.repoUrl` + `npm install`, the first
+  time any chain runs.
+- **Template** (`web-automation-develop-template`): `web.templateRepo`
+  is a git URL — cloned fresh per project by the factory.
+
+Prerequisites on the machine (tools, not repos): Node.js 20+, git,
+Docker running (local deploys), Claude/Codex CLI logged in (build
+stage), `gh` logged in (GitHub repo creation), and Ollama or a cloud
+provider configured in System B's `configs/ai-provider.yaml` (real AI
+test generation — without it System B falls back to smoke tests).
+
+For projects built from the System A template, roles and auth recipes
+are discovered automatically (see below). For other projects: auth
+recipes prepared in System B's format, referenced from `roles` in the
+connector config.
 
 ## Config format (`connector.config.yaml`)
 

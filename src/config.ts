@@ -19,6 +19,9 @@ const configSchema = z.object({
   }),
   systemB: z.object({
     repoPath: z.string().min(1),
+    // When set and repoPath doesn't exist yet, the connector clones
+    // System B there automatically on first use (zero manual setup).
+    repoUrl: z.string().optional(),
     inputsDir: z.string().default('inputs/projects'),
     reportsDir: z.string().default('reports'),
   }),
