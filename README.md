@@ -153,6 +153,24 @@ Notes:
 - A failed build/deploy stops the chain (fail loud); `--skip-build` /
   `--skip-deploy` let you resume from the middle.
 
+## `connect new` — Project Factory trên terminal (wizard)
+
+The CLI twin of the web form — same inputs, same automation, no browser:
+
+```bash
+npx tsx src/cli.ts new
+```
+
+It asks one question per field (Enter accepts the `[default]`): project
+name, requirement file, tech stack, AI provider, deploy target, app URL,
+optional GitHub repo, and the skip-build / skip-deploy toggles. After a
+summary + confirmation it runs the exact same kickoff job as the web UI
+(clone template → git init/link → npm install → full pipeline → push),
+streaming the job log live in the terminal and finishing with the result
+card (repo path, app URL, totals, bugs written, push status). Projects
+created here also show up in the `connect web` list — both modes share
+the same workspace and job state.
+
 ## `connect web` — Project Factory UI (localhost v1)
 
 A one-page web UI over `pipeline` for starting projects without touching

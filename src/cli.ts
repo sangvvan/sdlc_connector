@@ -384,6 +384,56 @@ program
   });
 
 program
+  .command('new')
+  .description('Khởi tạo project mới bằng wizard tương tác + chạy full workflow (CLI mode của Project Factory)')
+  .action(async () => {
+    const [{ runWizard, followJob }, { startJob }, { validateRequest, writeProjectFiles, projectPaths }] =
+      await Promise.all([import('./wizard.js'), import('./web/jobs.js'), import('./web/bootstrap.js')]);
+    const config = loadConfigOrDie(program.opts().config);
+    if (!config.web.templateRepo) {
+      fail('web.templateRepo chưa cấu hình trong connector.config.yaml (path local hoặc git URL của template).');
+      process.exit(1);
+    }
+
+    const req = await runWizard(config);
+    if (!req) {
+      console.log(pc.dim('Đã hủy — chưa tạo gì cả.'));
+      return;
+    }
+    const problems = validateRequest(req);
+    if (problems.length > 0) {
+      for (const p of problems) fail(p);
+      process.exit(1);
+    }
+
+    const paths = projectPaths(config, req.name);
+    writeProjectFiles(config, req, paths);
+    startJob(config, req, process.cwd());
+    console.log('');
+    ok(`Job started — log: ${paths.logFile}`);
+    const state = await followJob(config, req.name);
+
+    console.log('');
+    if (state.status === 'succeeded') {
+      ok(`Project ${req.name} DONE`);
+      console.log(`  repo project : ${paths.dir}`);
+      console.log(`  app URL      : ${req.url}`);
+      if (state.result?.totals) console.log(`  test totals  : ${JSON.stringify(state.result.totals)}`);
+      const bugs = state.result?.bugsWritten ?? [];
+      console.log(`  bugs ghi vào docs/bugs : ${bugs.length > 0 ? bugs.join(', ') : '0'}`);
+      if (req.gitRemote) {
+        console.log(
+          `  GitHub       : ${req.gitRemote} ${state.result?.pushed ? pc.green('✓ pushed') : pc.yellow('⚠ chưa push được — xem log')}`,
+        );
+      }
+    } else {
+      fail(`Job failed ở bước "${state.step}": ${state.error ?? 'xem log'}`);
+      console.log(pc.dim(`  log: ${paths.logFile}`));
+      process.exit(1);
+    }
+  });
+
+program
   .command('web')
   .description('Localhost project-factory UI: form → clone template → full pipeline → result')
   .option('--port <n>', 'port (default: web.port in config, 4000)')
