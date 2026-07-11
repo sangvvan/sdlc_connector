@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { execa } from 'execa';
 
@@ -71,6 +72,97 @@ export function ensureDevEnv(repoAPath: string): 'created' | 'exists' | 'no-temp
   });
   writeFileSync(envPath, env, { encoding: 'utf8', mode: 0o600 });
   return 'created';
+}
+
+/** First free localhost port in [start, start+100). */
+export async function findFreePort(start: number): Promise<number> {
+  for (let port = start; port < start + 100; port++) {
+    const free = await new Promise<boolean>((resolvePromise) => {
+      const srv = createServer();
+      srv.once('error', () => resolvePromise(false));
+      srv.listen(port, '127.0.0.1', () => srv.close(() => resolvePromise(true)));
+    });
+    if (free) return port;
+  }
+  throw new Error(`Không tìm được port trống trong khoảng ${start}..${start + 99}`);
+}
+
+const PG_BIND = '127.0.0.1:5433:5432';
+const PG_BIND_PARAM = '127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432';
+
+/**
+ * Make the postgres HOST port overridable in the CLONED project's
+ * docker-compose.yml (the template hardcodes 5433, so two projects can
+ * never run side by side). This edits the project's own repo — an
+ * artifact the connector already writes into — never the template.
+ * Idempotent; returns whether the port is parametrized afterwards.
+ */
+export function parametrizePostgresPort(repoAPath: string): boolean {
+  const file = join(repoAPath, 'docker-compose.yml');
+  if (!existsSync(file)) return false;
+  const src = readFileSync(file, 'utf8');
+  if (src.includes('POSTGRES_HOST_PORT')) return true;
+  if (!src.includes(PG_BIND)) return false;
+  writeFileSync(file, src.replace(PG_BIND, PG_BIND_PARAM), 'utf8');
+  return true;
+}
+
+export interface LocalDeployPrep {
+  envCreated: boolean;
+  appPort: string;
+  /** Host port assigned to postgres, undefined when compose isn't parametrizable. */
+  pgPort?: string;
+}
+
+/**
+ * Per-project port isolation for LOCAL deploys, so several factory
+ * projects can run side by side:
+ *
+ * - .env generated from .env.example when missing (ensureDevEnv)
+ * - LOCAL_PORT / BASE_URL derived from the app URL the user chose
+ *   (compose maps "${LOCAL_PORT:-3000}:3000")
+ * - postgres host port parametrized in the project's compose file and a
+ *   free port allocated once, persisted as POSTGRES_HOST_PORT in .env
+ *   (host-side DATABASE_URL kept in sync for migrations)
+ *
+ * Existing values are respected: variables already present in .env are
+ * never overwritten, so re-deploys keep their ports.
+ */
+export async function prepareLocalDeploy(
+  repoAPath: string,
+  appUrl: string,
+): Promise<LocalDeployPrep> {
+  const envCreated = ensureDevEnv(repoAPath) === 'created';
+  const envPath = join(repoAPath, '.env');
+  if (!existsSync(envPath)) {
+    return { envCreated, appPort: new URL(appUrl).port || '3000' };
+  }
+  let env = readFileSync(envPath, 'utf8');
+  const has = (key: string): boolean => new RegExp(`^${key}=`, 'm').test(env);
+  const appPort = new URL(appUrl).port || '3000';
+
+  if (envCreated) {
+    env = env.replace(/^BASE_URL=.*$/m, `BASE_URL=${appUrl}`);
+  }
+  if (!has('LOCAL_PORT')) {
+    env += `\n# per-project ports (sdlc-connector)\nLOCAL_PORT=${appPort}\n`;
+  }
+
+  let pgPort: string | undefined;
+  if (parametrizePostgresPort(repoAPath)) {
+    const existing = /^POSTGRES_HOST_PORT=(\d+)/m.exec(env);
+    if (existing) {
+      pgPort = existing[1]!;
+    } else {
+      pgPort = String(await findFreePort(5433));
+      env += `POSTGRES_HOST_PORT=${pgPort}\n`;
+      // host-side DATABASE_URL (migrations from the host) must follow
+      env = env.replaceAll('localhost:5433', `localhost:${pgPort}`);
+    }
+  }
+
+  writeFileSync(envPath, env, 'utf8');
+  return { envCreated, appPort, pgPort };
 }
 
 /**

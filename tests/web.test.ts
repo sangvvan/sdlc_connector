@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { deleteProject } from '../src/web/jobs.js';
 import { parse } from 'yaml';
 import type { ConnectorConfig } from '../src/config.js';
 import {
@@ -147,6 +148,52 @@ describe('buildProjectConfigYaml', () => {
     }
     expect(doc.pipeline.deploy.command).toEqual(['scripts/deploy.sh', 'staging', 'vercel']);
     expect(doc.pipeline.deploy.url).toBe('http://localhost:3000');
+  });
+});
+
+describe('deleteProject', () => {
+  it('removes the repo clone and all workspace metadata', async () => {
+    const config = baseConfig();
+    const paths = projectPaths(config, 'doomed');
+    mkdirSync(paths.dir, { recursive: true });
+    mkdirSync(paths.summaryDir, { recursive: true });
+    writeFileSync(join(paths.dir, 'x.txt'), 'x');
+    writeFileSync(paths.requirementFile, 'req');
+    writeFileSync(paths.configFile, 'cfg');
+    writeFileSync(paths.logFile, 'log');
+    writeFileSync(
+      paths.stateFile,
+      JSON.stringify({ name: 'doomed', status: 'failed', step: 'x', startedAt: 'now', request: {} }),
+    );
+
+    const result = await deleteProject(config, 'doomed');
+    expect(result.removed).toBe(true);
+    for (const p of [paths.dir, paths.requirementFile, paths.configFile, paths.logFile, paths.stateFile, paths.summaryDir]) {
+      expect(existsSync(p)).toBe(false);
+    }
+  });
+
+  it('still removes files when docker compose teardown fails (daemon down)', async () => {
+    const config = baseConfig();
+    const paths = projectPaths(config, 'compose-broken');
+    mkdirSync(paths.dir, { recursive: true });
+    writeFileSync(join(paths.dir, 'docker-compose.yml'), 'services: {}');
+    const result = await deleteProject(config, 'compose-broken');
+    expect(result.removed).toBe(true);
+    expect(existsSync(paths.dir)).toBe(false);
+  });
+
+  it('refuses while a job is running unless forced', async () => {
+    const config = baseConfig();
+    const paths = projectPaths(config, 'busy');
+    mkdirSync(paths.dir, { recursive: true });
+    writeFileSync(
+      paths.stateFile,
+      JSON.stringify({ name: 'busy', status: 'running', step: 'pipeline', startedAt: 'now', request: {} }),
+    );
+    await expect(deleteProject(config, 'busy')).rejects.toThrow(/đang có job chạy/);
+    const forced = await deleteProject(config, 'busy', true);
+    expect(forced.removed).toBe(true);
   });
 });
 

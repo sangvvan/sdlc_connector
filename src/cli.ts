@@ -17,7 +17,7 @@ import { nextBugNumber, existingSourceKeys } from './writeback/numbering.js';
 import { buildBacklogAppendix, appendToBacklog } from './writeback/backlog.js';
 import { confirmWriteback } from './writeback/gate.js';
 import { RunSummary } from './report/summary.js';
-import { ensureDevEnv, runStageCommand, substituteTokens, waitForUrl } from './pipeline/pipeline.js';
+import { prepareLocalDeploy, runStageCommand, substituteTokens, waitForUrl } from './pipeline/pipeline.js';
 import { banner, phase, ok, warn, fail, cmd } from './ui.js';
 
 function loadConfigOrDie(configPath: string): ConnectorConfig {
@@ -304,10 +304,15 @@ program
         if (!opts.skipDeploy) {
           phase(2, 3, 'DEPLOY — chạy script deploy của System A');
           if (p.deploy.command.includes('local')) {
-            const envState = ensureDevEnv(repoA);
-            if (envState === 'created') {
+            const prep = await prepareLocalDeploy(repoA, p.deploy.url);
+            if (prep.envCreated) {
               ok('.env generated from .env.example (random dev secrets — local only)');
             }
+            ok(
+              `Ports riêng cho project: app ${prep.appPort}` +
+                (prep.pgPort ? `, postgres ${prep.pgPort}` : '') +
+                ' — chạy song song nhiều project được',
+            );
           }
           cmd(p.deploy.command.join(' '));
           await runStageCommand(p.deploy.command, repoA);
@@ -432,6 +437,22 @@ program
     } else {
       fail(`Job failed ở bước "${state.step}": ${state.error ?? 'xem log'}`);
       console.log(pc.dim(`  log: ${paths.logFile}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('rm <name>')
+  .description('Xoá một project của factory: docker compose down -v + xoá repo và metadata')
+  .option('--force', 'xoá cả khi job đang chạy', false)
+  .action(async (name: string, opts: { force: boolean }) => {
+    const { deleteProject } = await import('./web/jobs.js');
+    const config = loadConfigOrDie(program.opts().config);
+    try {
+      const result = await deleteProject(config, name, opts.force);
+      for (const note of result.notes) ok(note);
+    } catch (e) {
+      fail((e as Error).message);
       process.exit(1);
     }
   });

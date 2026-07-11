@@ -114,7 +114,7 @@ export async function runWizard(config: ConnectorConfig): Promise<NewProjectRequ
       validate: (v) => {
         if (!NAME_RE.test(v)) return 'chữ thường/số/gạch ngang, bắt đầu bằng chữ';
         if (existsSync(projectPaths(config, v).dir))
-          return `projects/${v}/ đã tồn tại — chọn tên khác`;
+          return `projects/${v}/ đã tồn tại — chạy \`connect rm ${v}\` để xoá, hoặc chọn tên khác`;
         return undefined;
       },
     });

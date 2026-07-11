@@ -54,12 +54,17 @@
   button:disabled { opacity: 0.5; cursor: default; }
   .problems { color: var(--err); font-size: 13px; margin-top: 10px; white-space: pre-line; }
   .plist { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .plist li { display: flex; gap: 6px; }
   .plist button {
-    margin: 0; width: 100%; text-align: left; background: var(--bg); color: var(--ink);
-    border: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px;
-    font-weight: 500;
+    margin: 0; text-align: left; background: var(--bg); color: var(--ink);
+    border: 1px solid var(--line); font-weight: 500;
   }
-  .plist button.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .plist button.pick { flex: 1; display: flex; justify-content: space-between; gap: 8px; }
+  .plist button.pick.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .plist button.del { flex: none; width: 38px; text-align: center; color: var(--err); }
+  .actions { display: flex; gap: 10px; margin-bottom: 14px; }
+  .actions button { margin: 0; width: auto; padding: 7px 16px; }
+  .actions button.secondary { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
   .badge { font-size: 11px; font-weight: 700; padding: 1px 9px; border-radius: 999px; align-self: center; }
   .badge.running   { color: var(--run); border: 1px solid var(--run); }
   .badge.succeeded { color: var(--ok);  border: 1px solid var(--ok); }
@@ -175,13 +180,40 @@
   async function refresh() {
     const { projects } = await (await fetch('/api/projects')).json();
     $('plist').innerHTML = projects.map((p) =>
-      `<li><button type="button" class="${p.name === selected ? 'sel' : ''}" data-name="${esc(p.name)}">
-        <span class="mono">${esc(p.name)}</span>
-        <span class="badge ${esc(p.status)}">${esc(p.status)}${p.status === 'running' ? ' · ' + esc(p.step) : ''}</span>
-      </button></li>`).join('') || '<li class="empty">Chưa có project nào.</li>';
-    document.querySelectorAll('#plist button').forEach((b) =>
+      `<li>
+        <button type="button" class="pick ${p.name === selected ? 'sel' : ''}" data-name="${esc(p.name)}">
+          <span class="mono">${esc(p.name)}</span>
+          <span class="badge ${esc(p.status)}">${esc(p.status)}${p.status === 'running' ? ' · ' + esc(p.step) : ''}</span>
+        </button>
+        <button type="button" class="del" data-del="${esc(p.name)}" title="Xoá project (compose down -v + xoá files)">🗑</button>
+      </li>`).join('') || '<li class="empty">Chưa có project nào.</li>';
+    document.querySelectorAll('#plist button.pick').forEach((b) =>
       b.addEventListener('click', () => { selected = b.dataset.name; refresh(); }));
+    document.querySelectorAll('#plist button.del').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const name = b.dataset.del;
+        if (!confirm(`Xoá project "${name}"? Container + database + toàn bộ files sẽ bị gỡ.`)) return;
+        const res = await fetch('/api/projects/' + name, { method: 'DELETE' });
+        const body = await res.json();
+        if (!res.ok) { alert(body.error); return; }
+        if (selected === name) { selected = null; $('detail').className = 'empty'; $('detail').textContent = 'Chưa chọn project nào.'; }
+        refresh();
+      }));
     if (selected) await showDetail(selected);
+  }
+
+  async function rerun(name) {
+    const res = await fetch('/api/projects/' + name);
+    if (!res.ok) return;
+    const { state } = await res.json();
+    const again = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(state.request),
+    });
+    const body = await again.json();
+    if (!again.ok) alert((body.problems || [body.error]).join('\n'));
+    refresh();
   }
 
   async function showDetail(name) {
@@ -193,6 +225,7 @@
     const totals = r && r.totals ? JSON.stringify(r.totals) : '—';
     $('detail').classList.remove('empty');
     $('detail').innerHTML = `
+      ${state.status !== 'running' ? `<div class="actions"><button type="button" id="rerun">▶ Chạy lại (cùng cấu hình)</button></div>` : ''}
       <div class="result"><table>
         <tr><td>Trạng thái</td><td><span class="badge ${esc(state.status)}">${esc(state.status)}</span> — bước: ${esc(state.step)}</td></tr>
         <tr><td>Repo project</td><td class="mono">${esc('projects/' + state.name + '/')}</td></tr>
@@ -203,6 +236,8 @@
         ${state.error ? `<tr><td>Lỗi</td><td class="mono">${esc(state.error)}</td></tr>` : ''}
       </table></div>
       <pre id="log">${esc(log)}</pre>`;
+    const rerunBtn = $('rerun');
+    if (rerunBtn) rerunBtn.addEventListener('click', () => rerun(name));
     const pre = $('log');
     pre.scrollTop = pre.scrollHeight;
   }

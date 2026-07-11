@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createServer, type Server } from 'node:http';
-import { ensureDevEnv, substituteTokens, waitForUrl } from '../src/pipeline/pipeline.js';
+import { createServer as createHttpServer, type Server } from 'node:http';
+import { createServer } from 'node:net';
+import {
+  ensureDevEnv,
+  findFreePort,
+  parametrizePostgresPort,
+  prepareLocalDeploy,
+  substituteTokens,
+  waitForUrl,
+} from '../src/pipeline/pipeline.js';
 import { loadConfig } from '../src/config.js';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -41,7 +49,7 @@ describe('waitForUrl', () => {
   let status = 200;
 
   beforeAll(async () => {
-    server = createServer((_req, res) => {
+    server = createHttpServer((_req, res) => {
       res.statusCode = status;
       res.end('ok');
     });
@@ -119,6 +127,100 @@ describe('ensureDevEnv', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+const COMPOSE = [
+  'services:',
+  '  postgres:',
+  '    ports:',
+  '      - "127.0.0.1:5433:5432"',
+  '  app:',
+  '    ports:',
+  '      - "${LOCAL_PORT:-3000}:3000"',
+].join('\n');
+
+describe('per-project port isolation (prepareLocalDeploy)', () => {
+  const ENV_EXAMPLE = [
+    'BASE_URL=http://localhost:3000',
+    'POSTGRES_PASSWORD=CHANGE_ME_pw',
+    'DATABASE_URL=postgresql://app:CHANGE_ME_pw@localhost:5433/app_dev',
+    'SESSION_SECRET=CHANGE_ME_secret',
+  ].join('\n');
+
+  it('parametrizes the postgres host port in the cloned compose file, idempotently', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'iso-'));
+    try {
+      writeFileSync(join(dir, 'docker-compose.yml'), COMPOSE);
+      expect(parametrizePostgresPort(dir)).toBe(true);
+      const patched = readFileSync(join(dir, 'docker-compose.yml'), 'utf8');
+      expect(patched).toContain('127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432');
+      // second call: already parametrized, no double-patch
+      expect(parametrizePostgresPort(dir)).toBe(true);
+      expect(readFileSync(join(dir, 'docker-compose.yml'), 'utf8')).toBe(patched);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns false when there is no compose file or no known binding', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'iso-'));
+    try {
+      expect(parametrizePostgresPort(dir)).toBe(false);
+      writeFileSync(join(dir, 'docker-compose.yml'), 'services: {}');
+      expect(parametrizePostgresPort(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('assigns LOCAL_PORT from the app URL and a free postgres port, keeping DATABASE_URL in sync', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'iso-'));
+    // Occupy 5433 so the allocator must pick another port — the real
+    // "second project while the first is running" situation.
+    const blocker = createServer();
+    await new Promise<void>((done) => {
+      blocker.once('error', () => done()); // already busy = same effect
+      blocker.listen(5433, '127.0.0.1', () => done());
+    });
+    try {
+      writeFileSync(join(dir, '.env.example'), ENV_EXAMPLE);
+      writeFileSync(join(dir, 'docker-compose.yml'), COMPOSE);
+      const prep = await prepareLocalDeploy(dir, 'http://localhost:3010');
+      expect(prep.envCreated).toBe(true);
+      expect(prep.appPort).toBe('3010');
+      expect(prep.pgPort).toBeDefined();
+      expect(prep.pgPort).not.toBe('5433');
+      const env = readFileSync(join(dir, '.env'), 'utf8');
+      expect(env).toContain('LOCAL_PORT=3010');
+      expect(env).toContain('BASE_URL=http://localhost:3010');
+      expect(env).toContain(`POSTGRES_HOST_PORT=${prep.pgPort}`);
+      expect(env).toContain(`localhost:${prep.pgPort}/app_dev`);
+      expect(env).not.toContain('localhost:5433');
+    } finally {
+      blocker.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('re-deploys reuse the ports already recorded in .env', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'iso-'));
+    try {
+      writeFileSync(join(dir, '.env.example'), ENV_EXAMPLE);
+      writeFileSync(join(dir, 'docker-compose.yml'), COMPOSE);
+      const first = await prepareLocalDeploy(dir, 'http://localhost:3010');
+      const second = await prepareLocalDeploy(dir, 'http://localhost:3010');
+      expect(second.pgPort).toBe(first.pgPort);
+      expect(second.envCreated).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('findFreePort returns a port at or above the requested start', async () => {
+    const port = await findFreePort(5433);
+    expect(port).toBeGreaterThanOrEqual(5433);
+    expect(port).toBeLessThan(5533);
   });
 });
 

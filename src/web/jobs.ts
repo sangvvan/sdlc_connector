@@ -206,6 +206,57 @@ async function publishToRemote(paths: ProjectPaths, state: JobState): Promise<bo
   return pushed;
 }
 
+export interface DeleteResult {
+  removed: boolean;
+  notes: string[];
+}
+
+/**
+ * Delete a project completely: bring its docker compose stack down
+ * (containers + volumes, so the database goes too and ports are freed),
+ * then remove the repo clone and every workspace artifact. Refuses while
+ * a job is running unless forced. Compose teardown is best-effort —
+ * a stopped Docker daemon must not block cleanup of the files.
+ */
+export async function deleteProject(
+  config: ConnectorConfig,
+  name: string,
+  force = false,
+): Promise<DeleteResult> {
+  const state = loadState(config, name);
+  const paths = projectPaths(config, name);
+  if (state?.status === 'running' && !force) {
+    throw new Error(`Project "${name}" đang có job chạy — đợi xong hoặc dùng force`);
+  }
+  const notes: string[] = [];
+
+  if (existsSync(join(paths.dir, 'docker-compose.yml'))) {
+    const down = await execa('docker', ['compose', 'down', '-v', '--remove-orphans'], {
+      cwd: paths.dir,
+      reject: false,
+      all: true,
+    });
+    notes.push(
+      (down.exitCode ?? -1) === 0
+        ? 'docker compose down -v: containers + volumes đã gỡ'
+        : `docker compose down thất bại (${(down.all ?? '').toString().split('\n')[0]}) — bỏ qua, vẫn xoá files`,
+    );
+  }
+
+  for (const target of [
+    paths.dir,
+    paths.requirementFile,
+    paths.configFile,
+    paths.logFile,
+    paths.stateFile,
+    paths.summaryDir,
+  ]) {
+    rmSync(target, { recursive: true, force: true });
+  }
+  notes.push(`đã xoá ${paths.dir} và toàn bộ metadata`);
+  return { removed: true, notes };
+}
+
 /**
  * Start a kickoff job in the background. Returns immediately; progress
  * is observable via state + log polling. `connectorRoot` is the checkout

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ConnectorConfig } from '../config.js';
 import { validateRequest, writeProjectFiles, projectPaths, type NewProjectRequest } from './bootstrap.js';
-import { listProjects, loadState, readLog, startJob } from './jobs.js';
+import { deleteProject, listProjects, loadState, readLog, startJob } from './jobs.js';
 
 /**
  * `connect web` — localhost-only project-factory UI (v1).
@@ -76,6 +76,15 @@ export function createWebServer(config: ConnectorConfig, connectorRoot: string):
     }
 
     const m = NAME_IN_PATH.exec(url);
+    if (req.method === 'DELETE' && m && !m[2]) {
+      try {
+        const result = await deleteProject(config, m[1]!);
+        json(res, 200, result);
+      } catch (e) {
+        json(res, 409, { error: (e as Error).message });
+      }
+      return;
+    }
     if (req.method === 'GET' && m) {
       const name = m[1]!;
       if (m[2]) {

@@ -229,6 +229,25 @@ AI provider CLIs and deploy credentials must already work on this
 machine. Job state survives server restarts
 (`{workspaceDir}/{name}.state.json` + `.log`).
 
+## Project lifecycle: xoá, chạy lại, chạy song song
+
+- **Xoá project** (kể cả project failed): nút 🗑 trên web UI, hoặc
+  `connect rm <name>` (`--force` nếu job đang chạy). Gỡ trọn gói:
+  `docker compose down -v` (container + database volume, giải phóng
+  port), rồi xoá repo clone và toàn bộ metadata trong workspace. Docker
+  daemon chết cũng không chặn được việc xoá files.
+- **Chạy lại**: nút "▶ Chạy lại (cùng cấu hình)" trên trang detail của
+  web UI — hoặc POST lại cùng tên (chỉ bị chặn khi job đang chạy).
+  Repo clone và node_modules được dùng lại nên nhanh hơn lần đầu.
+- **Nhiều project song song**: mỗi project được cô lập port tự động khi
+  deploy local — `LOCAL_PORT` lấy từ URL app anh nhập (mỗi project chọn
+  một URL/port khác nhau, vd :3000, :3010), còn postgres host port được
+  cấp phát tự động (port trống đầu tiên từ 5433) và ghi vào `.env` của
+  project để các lần deploy sau giữ nguyên. Connector chỉnh compose file
+  **của bản clone project** (parametrize `POSTGRES_HOST_PORT`) — template
+  gốc và System B không bị đụng. Database mỗi project là một Docker
+  volume riêng theo tên project, không đụng nhau.
+
 ## Troubleshooting local deploys
 
 - **Docker daemon not reachable** — start Docker Desktop or `colima
@@ -237,15 +256,12 @@ machine. Job state survives server restarts
   for `local` targets: the connector generates `.env` from
   `.env.example` with random dev secrets. Cloud targets are on purpose
   NOT auto-filled.
-- **`Bind for 127.0.0.1:5433 failed: port is already allocated`** — the
-  System A template hardcodes the postgres host port 5433 in
-  `docker-compose.yml`, so only one template-based stack can run locally
-  at a time. Find the holder with `docker ps --filter "publish=5433"`
-  and `docker compose down` it (often a previously-run template checkout
-  or another factory project). To run several projects side by side,
-  parametrize the port in the template's compose file
-  (`"127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"`) — a one-time template
-  change owned by you, not something the connector edits by itself.
+- **`Bind for 127.0.0.1:5433 failed: port is already allocated`** —
+  factory projects are auto-isolated now (see "Project lifecycle"), so
+  this only happens when something OUTSIDE the factory holds the port
+  (a previously-run template checkout, a brew postgres). Find it with
+  `docker ps --filter "publish=5433"` / `lsof -nP -iTCP:5433` and stop
+  it, or delete + re-run the project to get a fresh port assigned.
 
 Every run writes `runs/summary-<timestamp>.json` with per-stage timings.
 
