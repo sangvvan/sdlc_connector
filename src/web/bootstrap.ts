@@ -129,6 +129,7 @@ export function buildProjectConfigYaml(
     systemA: { repoPath: paths.dir },
     systemB: {
       repoPath: resolve(config.systemB.repoPath),
+      repoUrl: config.systemB.repoUrl,
       inputsDir: config.systemB.inputsDir,
       reportsDir: config.systemB.reportsDir,
     },
