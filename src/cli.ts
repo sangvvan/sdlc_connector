@@ -17,7 +17,14 @@ import { nextBugNumber, existingSourceKeys } from './writeback/numbering.js';
 import { buildBacklogAppendix, appendToBacklog } from './writeback/backlog.js';
 import { confirmWriteback } from './writeback/gate.js';
 import { RunSummary } from './report/summary.js';
-import { prepareLocalDeploy, runStageCommand, substituteTokens, waitForUrl } from './pipeline/pipeline.js';
+import {
+  prepareLocalDeploy,
+  requirementsChanged,
+  runStageCommand,
+  snapshotRequirements,
+  substituteTokens,
+  waitForUrl,
+} from './pipeline/pipeline.js';
 import { banner, phase, ok, warn, fail, cmd } from './ui.js';
 
 function loadConfigOrDie(configPath: string): ConnectorConfig {
@@ -290,12 +297,24 @@ program
           ok(`Requirement written to ${docRel}`);
 
           const tokens = { requirement, requirementFile: reqFileAbs, requirementDoc: docRel };
+          const reqsBefore = snapshotRequirements(repoA);
           for (const raw of p.build.commands) {
             const command = substituteTokens(raw, tokens);
             cmd(command.join(' '));
             await runStageCommand(command, repoA);
           }
-          ok('System A pipeline finished');
+          // System A's run.sh chạy `set +e` nên có thể in "✓ complete"
+          // dù script con của nó chết — kiểm chứng bằng sản phẩm thật:
+          // phải có REQ-*.md mới/được ghi lại so với trước khi build.
+          if (!requirementsChanged(repoA, reqsBefore)) {
+            throw new Error(
+              'Build "hoàn thành" nhưng KHÔNG có docs/requirements/REQ-*.md nào được sinh ra ' +
+                'hay cập nhật — System A pipeline đã fail ngầm (run.sh nuốt lỗi bằng set +e). ' +
+                'Xem các dòng lỗi phía trên (thường là "No such file or directory" trong ' +
+                'scripts của template) — sửa template repo rồi chạy lại. KHÔNG deploy skeleton.',
+            );
+          }
+          ok('System A pipeline finished — requirements đã được sinh/cập nhật');
         } else {
           phase(1, 3, 'BUILD — bỏ qua' + (opts.skipBuild ? ' (--skip-build)' : ' (không cấu hình)'));
         }

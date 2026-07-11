@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -72,6 +72,36 @@ export function ensureDevEnv(repoAPath: string): 'created' | 'exists' | 'no-temp
   });
   writeFileSync(envPath, env, { encoding: 'utf8', mode: 0o600 });
   return 'created';
+}
+
+/**
+ * Sanity tripwire for the build stage: System A's run.sh runs with
+ * `set +e` and prints "✓ complete" even when its own sub-scripts crash,
+ * so a broken template can "succeed" while producing nothing. The
+ * template also SHIPS example REQ-*.md files, so existence proves
+ * nothing — instead snapshot name+mtime before the build and require
+ * that at least one REQ file was created or rewritten by it.
+ */
+export function snapshotRequirements(repoAPath: string): Record<string, number> {
+  const snapshot: Record<string, number> = {};
+  const dir = join(repoAPath, 'docs', 'requirements');
+  try {
+    for (const f of readdirSync(dir)) {
+      if (!/^REQ-.+\.md$/.test(f)) continue;
+      snapshot[f] = statSync(join(dir, f)).mtimeMs;
+    }
+  } catch {
+    // no requirements dir yet — empty snapshot
+  }
+  return snapshot;
+}
+
+export function requirementsChanged(
+  repoAPath: string,
+  before: Record<string, number>,
+): boolean {
+  const after = snapshotRequirements(repoAPath);
+  return Object.entries(after).some(([name, mtime]) => before[name] !== mtime);
 }
 
 /** First free localhost port in [start, start+100). */
