@@ -36,7 +36,14 @@ export function substituteTokens(command: string[], tokens: RequirementTokens): 
  */
 export async function runStageCommand(command: string[], cwd: string): Promise<void> {
   const [bin, ...args] = command;
-  const result = await execa(bin!, args, { cwd, stdio: 'inherit', reject: false });
+  // stdin closed on purpose: stage commands must never block waiting for
+  // interactive input (a rate-limited claude CLI does exactly that) —
+  // with EOF they fail fast and the failure surfaces honestly.
+  const result = await execa(bin!, args, {
+    cwd,
+    stdio: ['ignore', 'inherit', 'inherit'],
+    reject: false,
+  });
   if ((result.exitCode ?? -1) !== 0) {
     throw new Error(
       `Stage command failed (exit ${result.exitCode}): ${command.join(' ')} (cwd: ${cwd})`,

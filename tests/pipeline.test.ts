@@ -5,6 +5,7 @@ import {
   ensureDevEnv,
   findFreePort,
   requirementsChanged,
+  runStageCommand,
   snapshotRequirements,
   parametrizePostgresPort,
   prepareLocalDeploy,
@@ -141,6 +142,18 @@ const COMPOSE = [
   '    ports:',
   '      - "${LOCAL_PORT:-3000}:3000"',
 ].join('\n');
+
+describe('runStageCommand stdin handling', () => {
+  it(
+    'never blocks a child waiting for stdin — EOF is delivered (cat exits immediately)',
+    async () => {
+      // regression: a rate-limited claude CLI printing 'Reading additional
+      // input from stdin...' used to hang jobs forever on an open pipe.
+      await expect(runStageCommand(['cat'], process.cwd())).resolves.toBeUndefined();
+    },
+    5000,
+  );
+});
 
 describe('requirements tripwire (silent template failures)', () => {
   it('detects nothing changed when the build was a no-op — template examples do not count', () => {

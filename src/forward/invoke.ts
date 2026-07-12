@@ -27,11 +27,12 @@ export async function invokeSystemB(
   const args = ['run', 'ai-test', '--', 'workflow', '--input', inputRel];
   const startedAt = new Date();
 
-  // stdio inherit: System B's own output scrolls in our terminal.
-  // Report location comes from the filesystem, not stdout, so no capture.
+  // stdout/stderr inherit: System B's own output scrolls in our
+  // terminal (report location comes from the filesystem, no capture).
+  // stdin closed so no child can ever block waiting for input.
   const result = await execa('npm', args, {
     cwd,
-    stdio: 'inherit',
+    stdio: ['ignore', 'inherit', 'inherit'],
     reject: false,
   });
 

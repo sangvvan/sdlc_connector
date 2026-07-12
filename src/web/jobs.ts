@@ -144,7 +144,11 @@ async function runStepSoft(
   saveState(paths, state);
   const log = createWriteStream(paths.logFile, { flags: 'a' });
   log.write(`\n──── ${step}: ${bin} ${args.join(' ')} (cwd: ${cwd}) ────\n`);
-  const child = execa(bin, args, { cwd, reject: false, all: true });
+  // stdin: 'ignore' — child tools get EOF instead of a never-closing
+  // pipe. Without this, a tool that decides to wait for input (e.g. the
+  // claude CLI after hitting its usage limit prints 'Reading additional
+  // input from stdin...') blocks the job FOREVER as status=running.
+  const child = execa(bin, args, { cwd, reject: false, all: true, stdin: 'ignore' });
   child.all?.pipe(log, { end: false });
   const result = await child;
   log.end();

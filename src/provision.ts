@@ -22,13 +22,14 @@ export async function ensureSystemB(config: ConnectorConfig): Promise<void> {
     const url = config.systemB.repoUrl;
     if (!url) return;
     cmd(`git clone ${url} ${repo}`);
-    await execa('git', ['clone', url, repo], { stdio: 'inherit' });
+    // stdin closed: a credential prompt should fail fast, not hang
+    await execa('git', ['clone', url, repo], { stdio: ['ignore', 'inherit', 'inherit'] });
     ok(`System B cloned → ${repo}`);
   }
 
   if (existsSync(join(repo, 'package.json')) && !existsSync(join(repo, 'node_modules'))) {
     ok('System B: npm install (chỉ lần đầu, hơi lâu)...');
-    await execa('npm', ['install'], { cwd: repo, stdio: 'inherit' });
+    await execa('npm', ['install'], { cwd: repo, stdio: ['ignore', 'inherit', 'inherit'] });
     ok('System B dependencies installed');
   }
 }
