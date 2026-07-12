@@ -33,6 +33,8 @@ export interface JobState {
   startedAt: string;
   finishedAt?: string;
   error?: string;
+  /** PID of the connector process running this job (web server / wizard). */
+  runnerPid?: number;
   request: NewProjectRequest;
   /** Filled from the newest run summary once the pipeline finishes. */
   result?: {
@@ -49,13 +51,42 @@ function saveState(paths: ProjectPaths, state: JobState): void {
   writeFileSync(paths.stateFile, JSON.stringify(state, null, 2), 'utf8');
 }
 
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Load a project's job state, healing orphans: a state stuck on
+ * 'running' whose runner process no longer exists (server killed,
+ * wizard Ctrl+C'd, machine rebooted) can never finish — mark it failed
+ * so it can be deleted/re-run instead of blocking forever.
+ */
 export function loadState(config: ConnectorConfig, name: string): JobState | undefined {
   const paths = projectPaths(config, name);
+  let state: JobState;
   try {
-    return JSON.parse(readFileSync(paths.stateFile, 'utf8')) as JobState;
+    state = JSON.parse(readFileSync(paths.stateFile, 'utf8')) as JobState;
   } catch {
     return undefined;
   }
+  if (
+    state.status === 'running' &&
+    state.runnerPid !== process.pid &&
+    (!state.runnerPid || !isProcessAlive(state.runnerPid))
+  ) {
+    state.status = 'failed';
+    state.error =
+      `Job bị gián đoạn ở bước "${state.step}" (process connector đã thoát) — ` +
+      'xoá hoặc chạy lại được.';
+    state.finishedAt = new Date().toISOString();
+    saveState(paths, state);
+  }
+  return state;
 }
 
 export function listProjects(config: ConnectorConfig): JobState[] {
@@ -273,6 +304,7 @@ export function startJob(
     status: 'running',
     step: 'queued',
     startedAt: new Date().toISOString(),
+    runnerPid: process.pid,
     request: req,
   };
   writeFileSync(paths.logFile, `Project kickoff: ${req.name} — ${state.startedAt}\n`, 'utf8');

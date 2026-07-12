@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { deleteProject } from '../src/web/jobs.js';
+import { deleteProject, loadState } from '../src/web/jobs.js';
 import { parse } from 'yaml';
 import type { ConnectorConfig } from '../src/config.js';
 import {
@@ -183,17 +183,75 @@ describe('deleteProject', () => {
     expect(existsSync(paths.dir)).toBe(false);
   });
 
-  it('refuses while a job is running unless forced', async () => {
+  it('refuses while a job is truly running (live runner pid) unless forced', async () => {
     const config = baseConfig();
     const paths = projectPaths(config, 'busy');
     mkdirSync(paths.dir, { recursive: true });
     writeFileSync(
       paths.stateFile,
-      JSON.stringify({ name: 'busy', status: 'running', step: 'pipeline', startedAt: 'now', request: {} }),
+      JSON.stringify({
+        name: 'busy',
+        status: 'running',
+        step: 'pipeline',
+        startedAt: 'now',
+        runnerPid: process.pid, // this test process is alive
+        request: {},
+      }),
     );
     await expect(deleteProject(config, 'busy')).rejects.toThrow(/đang có job chạy/);
     const forced = await deleteProject(config, 'busy', true);
     expect(forced.removed).toBe(true);
+  });
+});
+
+describe('orphaned running jobs (runner process died)', () => {
+  it('auto-heals running state to failed when the runner pid is dead — then deletable', async () => {
+    const config = baseConfig();
+    const paths = projectPaths(config, 'orphan');
+    mkdirSync(paths.dir, { recursive: true });
+    writeFileSync(
+      paths.stateFile,
+      JSON.stringify({
+        name: 'orphan',
+        status: 'running',
+        step: 'pipeline',
+        startedAt: 'now',
+        runnerPid: 999999999, // no such process
+        request: {},
+      }),
+    );
+    const state = loadState(config, 'orphan')!;
+    expect(state.status).toBe('failed');
+    expect(state.error).toContain('gián đoạn');
+    expect(state.finishedAt).toBeDefined();
+    // persisted, not just in-memory
+    const onDisk = JSON.parse(readFileSync(paths.stateFile, 'utf8')) as { status: string };
+    expect(onDisk.status).toBe('failed');
+    // and now deletable without force
+    const result = await deleteProject(config, 'orphan');
+    expect(result.removed).toBe(true);
+  });
+
+  it('legacy states without runnerPid are treated as orphaned too', () => {
+    const config = baseConfig();
+    const paths = projectPaths(config, 'legacy-state');
+    mkdirSync(paths.dir, { recursive: true });
+    writeFileSync(
+      paths.stateFile,
+      JSON.stringify({ name: 'legacy-state', status: 'running', step: 'clone', startedAt: 'now', request: {} }),
+    );
+    expect(loadState(config, 'legacy-state')!.status).toBe('failed');
+  });
+
+  it('finished states are left untouched', () => {
+    const config = baseConfig();
+    const paths = projectPaths(config, 'done-state');
+    mkdirSync(paths.dir, { recursive: true });
+    writeFileSync(
+      paths.stateFile,
+      JSON.stringify({ name: 'done-state', status: 'succeeded', step: 'done', startedAt: 'now', request: {} }),
+    );
+    expect(loadState(config, 'done-state')!.status).toBe('succeeded');
   });
 });
 

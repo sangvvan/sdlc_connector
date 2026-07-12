@@ -41,7 +41,8 @@ export function createWebServer(config: ConnectorConfig, connectorRoot: string):
   });
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = req.url ?? '/';
+    const [url = '/', queryString = ''] = (req.url ?? '/').split('?');
+    const query = new URLSearchParams(queryString);
 
     if (req.method === 'GET' && (url === '/' || url === '/index.html')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -78,7 +79,7 @@ export function createWebServer(config: ConnectorConfig, connectorRoot: string):
     const m = NAME_IN_PATH.exec(url);
     if (req.method === 'DELETE' && m && !m[2]) {
       try {
-        const result = await deleteProject(config, m[1]!);
+        const result = await deleteProject(config, m[1]!, query.get('force') === '1');
         json(res, 200, result);
       } catch (e) {
         json(res, 409, { error: (e as Error).message });

@@ -193,8 +193,13 @@
       b.addEventListener('click', async () => {
         const name = b.dataset.del;
         if (!confirm(`Xoá project "${name}"? Container + database + toàn bộ files sẽ bị gỡ.`)) return;
-        const res = await fetch('/api/projects/' + name, { method: 'DELETE' });
-        const body = await res.json();
+        let res = await fetch('/api/projects/' + name, { method: 'DELETE' });
+        let body = await res.json();
+        if (res.status === 409) {
+          if (!confirm(body.error + '\n\nVẫn xoá (force)? Job đang chạy sẽ bị bỏ rơi.')) return;
+          res = await fetch('/api/projects/' + name + '?force=1', { method: 'DELETE' });
+          body = await res.json();
+        }
         if (!res.ok) { alert(body.error); return; }
         if (selected === name) { selected = null; $('detail').className = 'empty'; $('detail').textContent = 'Chưa chọn project nào.'; }
         refresh();
