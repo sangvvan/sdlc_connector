@@ -17,7 +17,16 @@ import type { ConnectorConfig } from '../config.js';
  *   {workspace}/{name}.runs/             ← run summaries
  */
 
-export const AI_PROVIDERS = ['claude', 'codex', 'gemini', 'opencode'] as const;
+export const AI_PROVIDERS = [
+  'claude',
+  'codex',
+  'copilot',
+  'gemini',
+  'opencode', // LM Studio / Ollama local (System A routes opencode → local LLM)
+  'opencode-ollama',
+] as const;
+
+export const BUILD_MODES = ['foundation', 'full'] as const;
 export const DEPLOY_TARGETS = [
   'local',
   'staging aws',
@@ -41,6 +50,14 @@ export interface NewProjectRequest {
    * Existing repo → used as-is; missing → created via `gh repo create`.
    */
   gitRemote?: string;
+  /**
+   * 'foundation' (default): chỉ chạy các phase kiến thiết
+   * (PS → BA → Advisor → Planning → Design) sinh đủ REQ/US/TASK/design
+   * docs rồi dừng — không implement, không deploy, không test. Team
+   * chọn task/sprint chạy dần sau bằng `connect work`.
+   * 'full': trọn chuỗi build → deploy → test như trước.
+   */
+  buildMode?: (typeof BUILD_MODES)[number];
   skipBuild?: boolean;
   skipDeploy?: boolean;
 }
@@ -80,6 +97,9 @@ export function validateRequest(req: NewProjectRequest): string[] {
     problems.push(
       'GitHub repo không hợp lệ — dùng https://github.com/owner/repo hoặc git@github.com:owner/repo.git',
     );
+  }
+  if (req.buildMode && !(BUILD_MODES as readonly string[]).includes(req.buildMode)) {
+    problems.push(`Build mode phải là: ${BUILD_MODES.join(' | ')}`);
   }
   return problems;
 }
@@ -141,9 +161,12 @@ export function buildProjectConfigYaml(
       project: req.name,
       requirementFile: paths.requirementFile,
       // The connector writes the requirement to requirementDoc first,
-      // then: /ps turns it into REQ-*.md, /feature all runs the full
-      // phase pipeline for every generated requirement. run.sh only
-      // accepts short prompts/ids as argv — never the whole document.
+      // then: /ps turns it into REQ-*.md, /feature all runs the phase
+      // pipeline for every generated requirement. run.sh only accepts
+      // short prompts/ids as argv — never the whole document.
+      // foundation mode skips implementation→devops: only the thinking
+      // phases run (BA/Advisor/Planning/Design), producing US/TASK/design
+      // docs for the team to pick up with `connect work`.
       build: {
         requirementDoc: 'docs/requirements/PS-001.md',
         commands: [
@@ -153,7 +176,13 @@ export function buildProjectConfigYaml(
             'Generate versioned requirements (REQ-*.md) from {requirementDoc}',
             `--provider=${req.aiProvider}`,
           ],
-          ['scripts/legacy/run.sh', '/feature', 'all', `--provider=${req.aiProvider}`],
+          [
+            'scripts/legacy/run.sh',
+            '/feature',
+            'all',
+            ...(req.buildMode !== 'full' ? ['--skip=implementation,local_tasks,qa,devops'] : []),
+            `--provider=${req.aiProvider}`,
+          ],
         ],
       },
       deploy: {

@@ -98,10 +98,17 @@
       <input id="stack" placeholder="Remix + PostgreSQL + Tailwind (mặc định của template)">
       <label for="prov">AI provider (chạy các phase SDLC)</label>
       <select id="prov">
-        <option value="claude" selected>claude (mặc định)</option>
-        <option value="codex">codex</option>
-        <option value="gemini">gemini</option>
-        <option value="opencode">opencode</option>
+        <option value="claude" selected>claude (cloud)</option>
+        <option value="codex">codex (cloud)</option>
+        <option value="copilot">copilot (cloud)</option>
+        <option value="gemini">gemini (cloud)</option>
+        <option value="opencode">opencode — LM Studio local, không tốn token</option>
+        <option value="opencode-ollama">opencode-ollama — Ollama local</option>
+      </select>
+      <label for="mode">Build mode</label>
+      <select id="mode">
+        <option value="foundation" selected>foundation — chỉ sinh REQ/US/TASK/design docs, team chạy việc dần (tiết kiệm token)</option>
+        <option value="full">full — build code + deploy + AI test trọn chuỗi</option>
       </select>
       <label for="target">Deploy lên đâu</label>
       <select id="target">
@@ -154,6 +161,7 @@
           requirement: $('req').value,
           techStack: $('stack').value,
           aiProvider: $('prov').value,
+          buildMode: $('mode').value,
           deployTarget: $('target').value,
           url: $('url').value.trim(),
           gitRemote: $('gitremote').value.trim(),
@@ -235,6 +243,7 @@
         <tr><td>Trạng thái</td><td><span class="badge ${esc(state.status)}">${esc(state.status)}</span> — bước: ${esc(state.step)}</td></tr>
         <tr><td>Repo project</td><td class="mono">${esc('projects/' + state.name + '/')}</td></tr>
         <tr><td>App URL</td><td><a href="${esc(state.request.url)}" target="_blank" rel="noopener" class="mono">${esc(state.request.url)}</a></td></tr>
+        ${r && r.docs ? `<tr><td>Docs kiến thiết</td><td class="mono">REQ: ${r.docs.requirements} · US: ${r.docs.userStories} · TASK: ${r.docs.tasks} · SPRINT: ${r.docs.sprints} — team chạy tiếp: <b>connect work ${esc(state.name)} TASK-001</b></td></tr>` : ''}
         <tr><td>Kết quả test</td><td class="mono">${esc(totals)}</td></tr>
         <tr><td>Bug đã ghi</td><td class="mono">${esc(r && r.bugsWritten ? r.bugsWritten.join(', ') || '0' : '—')}</td></tr>
         ${state.request.gitRemote ? `<tr><td>GitHub repo</td><td><a href="${esc(state.request.gitRemote)}" target="_blank" rel="noopener" class="mono">${esc(state.request.gitRemote)}</a>${r && r.pushed !== undefined ? (r.pushed ? ' ✓ pushed' : ' ⚠ push thất bại — xem log') : ''}</td></tr>` : ''}

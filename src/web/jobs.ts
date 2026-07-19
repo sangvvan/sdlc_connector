@@ -44,6 +44,8 @@ export interface JobState {
     runIds?: string[];
     /** Set when a gitRemote was requested: did the final push succeed? */
     pushed?: boolean;
+    /** Foundation mode: counts of generated planning docs. */
+    docs?: { requirements: number; userStories: number; tasks: number; sprints: number };
   };
 }
 
@@ -113,6 +115,22 @@ export function readLog(config: ConnectorConfig, name: string): string {
   } catch {
     return '';
   }
+}
+
+function countDocs(projectDir: string): NonNullable<JobState['result']>['docs'] {
+  const count = (sub: string, re: RegExp): number => {
+    try {
+      return readdirSync(join(projectDir, 'docs', sub)).filter((f) => re.test(f)).length;
+    } catch {
+      return 0;
+    }
+  };
+  return {
+    requirements: count('requirements', /^REQ-.+\.md$/),
+    userStories: count('user-stories', /^US-.+\.md$/),
+    tasks: count('tasks', /^TASK-.+\.md$/),
+    sprints: count('sprints', /^SPRINT-.+\.md$/),
+  };
 }
 
 function newestSummary(summaryDir: string): string | undefined {
@@ -331,9 +349,12 @@ export function startJob(
       if (!existsSync(join(paths.dir, 'node_modules'))) {
         await runStep(paths, state, 'install', 'npm', ['install'], paths.dir);
       }
+      const foundation = req.buildMode !== 'full';
       const flags = [
         ...(req.skipBuild ? ['--skip-build'] : []),
-        ...(req.skipDeploy ? ['--skip-deploy'] : []),
+        // foundation: chưa có app để deploy/test — dừng sau khi sinh docs
+        ...(req.skipDeploy || foundation ? ['--skip-deploy'] : []),
+        ...(foundation ? ['--skip-test'] : []),
       ];
       await runStep(
         paths,
@@ -357,6 +378,12 @@ export function startJob(
           totals: summary.totals,
           bugsWritten: summary.bugsWritten as string[] | undefined,
           runIds: summary.runIds as string[] | undefined,
+          ...(pushed !== undefined ? { pushed } : {}),
+        };
+      } else if (foundation) {
+        state.result = {
+          summaryPath: '',
+          docs: countDocs(paths.dir),
           ...(pushed !== undefined ? { pushed } : {}),
         };
       }

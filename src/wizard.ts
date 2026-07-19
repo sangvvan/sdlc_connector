@@ -5,6 +5,7 @@ import pc from 'picocolors';
 import type { ConnectorConfig } from './config.js';
 import {
   AI_PROVIDERS,
+  BUILD_MODES,
   DEPLOY_TARGETS,
   parseGitHubRepo,
   projectPaths,
@@ -130,6 +131,7 @@ export async function runWizard(config: ConnectorConfig): Promise<NewProjectRequ
 
     const techStack = await ask(p, 'Tech stack (thêm vào requirement)', { optional: true });
 
+    console.log(pc.dim('  opencode = LM Studio / Ollama local (không tốn token cloud)'));
     const aiProvider = await ask(p, `AI provider (${AI_PROVIDERS.join(' | ')})`, {
       def: 'claude',
       validate: (v) =>
@@ -138,26 +140,42 @@ export async function runWizard(config: ConnectorConfig): Promise<NewProjectRequ
           : `chọn một trong: ${AI_PROVIDERS.join(', ')}`,
     });
 
-    console.log(pc.dim(`  deploy targets: ${DEPLOY_TARGETS.join(' | ')}`));
-    const deployTarget = await ask(p, 'Deploy lên đâu', {
-      def: 'local',
+    console.log(
+      pc.dim(
+        '  foundation = chỉ sinh REQ/US/TASK/design docs rồi dừng — team chọn việc chạy dần bằng `connect work` (tiết kiệm token)\n' +
+          '  full       = build code + deploy + AI test trọn chuỗi',
+      ),
+    );
+    const buildMode = (await ask(p, `Build mode (${BUILD_MODES.join(' | ')})`, {
+      def: 'foundation',
       validate: (v) =>
-        (DEPLOY_TARGETS as readonly string[]).includes(v)
-          ? undefined
-          : 'không có target này (xem danh sách trên)',
-    });
+        (BUILD_MODES as readonly string[]).includes(v) ? undefined : 'foundation hoặc full',
+    })) as NewProjectRequest['buildMode'];
 
-    const url = await ask(p, 'URL app sau deploy', {
-      def: 'http://localhost:3000',
-      validate: (v) => {
-        try {
-          new URL(v);
-          return undefined;
-        } catch {
-          return 'URL không hợp lệ';
-        }
-      },
-    });
+    let deployTarget = 'local';
+    let url = 'http://localhost:3000';
+    if (buildMode === 'full') {
+      console.log(pc.dim(`  deploy targets: ${DEPLOY_TARGETS.join(' | ')}`));
+      deployTarget = await ask(p, 'Deploy lên đâu', {
+        def: 'local',
+        validate: (v) =>
+          (DEPLOY_TARGETS as readonly string[]).includes(v)
+            ? undefined
+            : 'không có target này (xem danh sách trên)',
+      });
+
+      url = await ask(p, 'URL app sau deploy', {
+        def: 'http://localhost:3000',
+        validate: (v) => {
+          try {
+            new URL(v);
+            return undefined;
+          } catch {
+            return 'URL không hợp lệ';
+          }
+        },
+      });
+    }
 
     const gitRemote = await ask(p, 'GitHub repo (có sẵn thì dùng, chưa có thì tạo private)', {
       optional: true,
@@ -167,14 +185,19 @@ export async function runWizard(config: ConnectorConfig): Promise<NewProjectRequ
           : 'dùng https://github.com/owner/repo hoặc git@github.com:owner/repo.git',
     });
 
-    const skipBuild = await askYesNo(p, 'Bỏ qua build (code đã có sẵn)?');
-    const skipDeploy = await askYesNo(p, 'App đang chạy sẵn (bỏ qua deploy)?');
+    let skipBuild = false;
+    let skipDeploy = false;
+    if (buildMode === 'full') {
+      skipBuild = await askYesNo(p, 'Bỏ qua build (code đã có sẵn)?');
+      skipDeploy = await askYesNo(p, 'App đang chạy sẵn (bỏ qua deploy)?');
+    }
 
     const req: NewProjectRequest = {
       name,
       requirement: readFileSync(resolve(requirementFile), 'utf8'),
       techStack: techStack || undefined,
       aiProvider,
+      buildMode,
       deployTarget,
       url,
       gitRemote: gitRemote || undefined,
@@ -188,10 +211,15 @@ export async function runWizard(config: ConnectorConfig): Promise<NewProjectRequ
     console.log(`  requirement  : ${resolve(requirementFile)}`);
     console.log(`  tech stack   : ${req.techStack ?? '(mặc định template)'}`);
     console.log(`  AI provider  : ${req.aiProvider}`);
-    console.log(`  deploy       : ${req.deployTarget}${req.skipDeploy ? ' (bỏ qua — app chạy sẵn)' : ''}`);
-    console.log(`  app URL      : ${req.url}`);
+    console.log(
+      `  build mode   : ${req.buildMode}${req.buildMode === 'foundation' ? ' (kiến thiết docs, không implement/deploy/test)' : ''}`,
+    );
+    if (req.buildMode === 'full') {
+      console.log(`  deploy       : ${req.deployTarget}${req.skipDeploy ? ' (bỏ qua — app chạy sẵn)' : ''}`);
+      console.log(`  app URL      : ${req.url}`);
+      console.log(`  build        : ${req.skipBuild ? 'bỏ qua' : 'chạy AI agents'}`);
+    }
     console.log(`  GitHub repo  : ${req.gitRemote ?? '(không push)'}`);
-    console.log(`  build        : ${req.skipBuild ? 'bỏ qua' : 'chạy AI agents'}`);
     const go = await askYesNo(p, '\n🚀 Bắt đầu full workflow?', true);
     return go ? req : undefined;
   } finally {

@@ -69,6 +69,16 @@ describe('validateRequest', () => {
     expect(validateRequest({ ...validReq(), requirement: '  ' })).toHaveLength(1);
   });
 
+  it('accepts local providers and build modes, rejects unknown ones', () => {
+    expect(validateRequest({ ...validReq(), aiProvider: 'opencode' })).toEqual([]);
+    expect(validateRequest({ ...validReq(), aiProvider: 'opencode-ollama' })).toEqual([]);
+    expect(validateRequest({ ...validReq(), buildMode: 'foundation' })).toEqual([]);
+    expect(validateRequest({ ...validReq(), buildMode: 'full' })).toEqual([]);
+    expect(
+      validateRequest({ ...validReq(), buildMode: 'half' as unknown as 'full' }),
+    ).toHaveLength(1);
+  });
+
   it('accepts a valid GitHub remote and rejects garbage', () => {
     expect(validateRequest({ ...validReq(), gitRemote: 'https://github.com/me/proj' })).toEqual([]);
     expect(validateRequest({ ...validReq(), gitRemote: '' })).toEqual([]);
@@ -148,6 +158,27 @@ describe('buildProjectConfigYaml', () => {
     }
     expect(doc.pipeline.deploy.command).toEqual(['scripts/deploy.sh', 'staging', 'vercel']);
     expect(doc.pipeline.deploy.url).toBe('http://localhost:3000');
+  });
+
+  it('foundation mode (default) skips implementation→devops in /feature all', () => {
+    const config = baseConfig();
+    const paths = projectPaths(config, 'course-catalog');
+    const doc = parse(buildProjectConfigYaml(config, validReq(), paths)) as {
+      pipeline: { build: { commands: string[][] } };
+    };
+    expect(doc.pipeline.build.commands[1]).toContain(
+      '--skip=implementation,local_tasks,qa,devops',
+    );
+  });
+
+  it('full mode keeps the complete phase chain', () => {
+    const config = baseConfig();
+    const req = { ...validReq(), buildMode: 'full' as const };
+    const paths = projectPaths(config, 'course-catalog');
+    const doc = parse(buildProjectConfigYaml(config, req, paths)) as {
+      pipeline: { build: { commands: string[][] } };
+    };
+    expect(doc.pipeline.build.commands[1]!.join(' ')).not.toContain('--skip=');
   });
 });
 

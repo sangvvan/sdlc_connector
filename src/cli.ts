@@ -258,9 +258,16 @@ program
   .option('--requirement <file>', 'requirement file (overrides pipeline.requirementFile)')
   .option('--skip-build', 'skip the System A agents build stage', false)
   .option('--skip-deploy', 'skip the deploy stage (app already running)', false)
+  .option('--skip-test', 'stop after build/deploy — no AI test stage (foundation mode)', false)
   .option('--yes', 'skip the human confirmation gate (demo/CI)', false)
   .action(
-    async (opts: { requirement?: string; skipBuild: boolean; skipDeploy: boolean; yes: boolean }) => {
+    async (opts: {
+      requirement?: string;
+      skipBuild: boolean;
+      skipDeploy: boolean;
+      skipTest: boolean;
+      yes: boolean;
+    }) => {
       const config = loadConfigOrDie(program.opts().config);
       const p = config.pipeline;
       if (!p) {
@@ -338,15 +345,25 @@ program
           ok(`Deploy command finished — waiting for ${p.deploy.url} (max ${p.deploy.healthTimeoutSec}s)`);
           await waitForUrl(p.deploy.url, p.deploy.healthTimeoutSec);
           ok(`App is up: ${p.deploy.url}`);
-        } else {
+        } else if (!opts.skipTest) {
           phase(2, 3, 'DEPLOY — bỏ qua (--skip-deploy)');
           await waitForUrl(p.deploy.url, 10);
           ok(`App already up: ${p.deploy.url}`);
+        } else {
+          phase(2, 3, 'DEPLOY — bỏ qua (chưa có app để deploy)');
         }
 
         // ── GIAI ĐOẠN 3: the existing test + write-back chain ──
-        phase(3, 3, 'TEST + WRITE-BACK — chuỗi BƯỚC 0-4');
-        await runChain(config, { url: p.deploy.url, project: p.project, yes: opts.yes });
+        if (opts.skipTest) {
+          phase(3, 3, 'TEST — bỏ qua (--skip-test)');
+          ok('Kiến thiết xong. Team chọn việc để chạy tiếp:');
+          console.log(pc.dim('  connect work <project> TASK-001         # implement 1 task'));
+          console.log(pc.dim('  connect work <project> REQ-001          # full pipeline 1 requirement'));
+          console.log(pc.dim('  connect work <project> sprint plan ...  # lập sprint'));
+        } else {
+          phase(3, 3, 'TEST + WRITE-BACK — chuỗi BƯỚC 0-4');
+          await runChain(config, { url: p.deploy.url, project: p.project, yes: opts.yes });
+        }
       } catch (e) {
         fail((e as Error).message);
         process.exit(1);
@@ -446,6 +463,13 @@ program
       console.log(`  repo project : ${paths.dir}`);
       console.log(`  app URL      : ${req.url}`);
       if (state.result?.totals) console.log(`  test totals  : ${JSON.stringify(state.result.totals)}`);
+      if (state.result?.docs) {
+        const d = state.result.docs;
+        console.log(
+          `  docs kiến thiết: REQ ${d.requirements} · US ${d.userStories} · TASK ${d.tasks} · SPRINT ${d.sprints}`,
+        );
+        console.log(pc.dim(`  team chạy tiếp: connect work ${req.name} TASK-001 | REQ-001 | sprint plan ...`));
+      }
       const bugs = state.result?.bugsWritten ?? [];
       console.log(`  bugs ghi vào docs/bugs : ${bugs.length > 0 ? bugs.join(', ') : '0'}`);
       if (req.gitRemote) {
@@ -456,6 +480,56 @@ program
     } else {
       fail(`Job failed ở bước "${state.step}": ${state.error ?? 'xem log'}`);
       console.log(pc.dim(`  log: ${paths.logFile}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('work <name> <target...>')
+  .description(
+    'Team member chạy một phần việc trên project của factory: TASK-001 | REQ-001 | US-001 | sprint …',
+  )
+  .option('--provider <p>', 'AI provider (mặc định: provider lúc tạo project)')
+  .action(async (name: string, target: string[], opts: { provider?: string }) => {
+    const [{ projectPaths }, { loadState }, { runStageCommand }] = await Promise.all([
+      import('./web/bootstrap.js'),
+      import('./web/jobs.js'),
+      import('./pipeline/pipeline.js'),
+    ]);
+    const config = loadConfigOrDie(program.opts().config);
+    const paths = projectPaths(config, name);
+    if (!existsSync(paths.dir)) {
+      fail(`Không thấy project "${name}" tại ${paths.dir} — xem danh sách bằng connect web`);
+      process.exit(1);
+    }
+    const provider =
+      opts.provider ?? loadState(config, name)?.request.aiProvider ?? 'opencode';
+
+    const head = target[0] ?? '';
+    let args: string[];
+    if (/^TASK-\w+$/i.test(head)) args = ['/implement', head.toUpperCase()];
+    else if (/^(REQ|US)-\w+$/i.test(head)) args = ['/feature', head.toUpperCase()];
+    else if (/^sprint$/i.test(head)) args = ['/sprint', ...target.slice(1)];
+    else if (head.startsWith('/')) args = target; // power users: lệnh run.sh trực tiếp
+    else {
+      fail(
+        `Không hiểu "${target.join(' ')}" — dùng: TASK-001 | REQ-001 | US-001 | sprint plan/start/... | /<lệnh run.sh>`,
+      );
+      process.exit(1);
+    }
+
+    const command = ['scripts/legacy/run.sh', ...args, `--provider=${provider}`];
+    cmd(command.join(' '));
+    try {
+      await runStageCommand(command, paths.dir);
+      ok(`Xong: ${args.join(' ')} (provider ${provider})`);
+      console.log(
+        pc.dim(
+          `Khi app đã deploy, chạy vòng test: connect pipeline --config ${paths.configFile} --yes --skip-build`,
+        ),
+      );
+    } catch (e) {
+      fail((e as Error).message);
       process.exit(1);
     }
   });

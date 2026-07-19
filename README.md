@@ -229,6 +229,41 @@ AI provider CLIs and deploy credentials must already work on this
 machine. Job state survives server restarts
 (`{workspaceDir}/{name}.state.json` + `.log`).
 
+## Build mode: foundation vs full (tiết kiệm token)
+
+Chạy trọn chuỗi AI build ngốn rất nhiều token. Mặc định project mới giờ
+dùng **foundation mode**:
+
+- **foundation** (mặc định): chỉ chạy các phase kiến thiết —
+  `/ps` sinh REQ-*.md, rồi `/feature all
+  --skip=implementation,local_tasks,qa,devops` sinh US/TASK/design docs
+  — xong dừng (không implement, không deploy, không test). Kết quả hiện
+  số REQ/US/TASK/SPRINT đã sinh. Push lên GitHub bình thường.
+- **full**: chuỗi build → deploy → AI test như cũ.
+
+Sau foundation, **team members chọn việc chạy dần** — bằng provider
+local (LM Studio qua `opencode`, không tốn token cloud) hoặc bất kỳ
+provider nào:
+
+```bash
+connect work <project> TASK-001                 # implement 1 task
+connect work <project> REQ-002                  # full pipeline 1 requirement
+connect work <project> sprint plan SPRINT-001 US-001 US-002
+connect work <project> sprint start
+connect work <project> /fix BUG-001             # lệnh run.sh bất kỳ
+connect work <project> TASK-003 --provider=claude   # override provider
+```
+
+`work` chạy `scripts/legacy/run.sh` của chính project đó (provider mặc
+định = provider chọn lúc tạo project). Khi app đã deploy được, chạy vòng
+AI test: `connect pipeline --config projects/<p>.connector.yaml --yes
+--skip-build`.
+
+AI providers: `claude` / `codex` / `copilot` / `gemini` (cloud) —
+`opencode` (LM Studio local) / `opencode-ollama` (Ollama local).
+Local provider cần LM Studio/Ollama đang chạy và System A đã setup
+opencode (`scripts/setup_opencode.sh` trong template).
+
 ## Project lifecycle: xoá, chạy lại, chạy song song
 
 - **Xoá project** (kể cả project failed): nút 🗑 trên web UI, hoặc
