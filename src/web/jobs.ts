@@ -157,6 +157,7 @@ async function runStepSoft(
   bin: string,
   args: string[],
   cwd: string,
+  env?: Record<string, string>,
 ): Promise<number> {
   state.step = step;
   saveState(paths, state);
@@ -166,7 +167,7 @@ async function runStepSoft(
   // pipe. Without this, a tool that decides to wait for input (e.g. the
   // claude CLI after hitting its usage limit prints 'Reading additional
   // input from stdin...') blocks the job FOREVER as status=running.
-  const child = execa(bin, args, { cwd, reject: false, all: true, stdin: 'ignore' });
+  const child = execa(bin, args, { cwd, reject: false, all: true, stdin: 'ignore', env });
   child.all?.pipe(log, { end: false });
   const result = await child;
   log.end();
@@ -348,6 +349,26 @@ export function startJob(
       }
       if (!existsSync(join(paths.dir, 'node_modules'))) {
         await runStep(paths, state, 'install', 'npm', ['install'], paths.dir);
+      }
+      // Local LLM provider: generate the project's .opencode/config.json
+      // via System A's own setup script (auto-detects the loaded model;
+      // localLLM config pins baseUrl/model explicitly). Best-effort — a
+      // stopped LM Studio becomes a warning here and an honest build
+      // failure later, not a silent hang.
+      if (req.aiProvider.startsWith('opencode')) {
+        const script =
+          req.aiProvider === 'opencode-ollama' && existsSync(join(paths.dir, 'scripts/setup_opencode_ollama.sh'))
+            ? 'scripts/setup_opencode_ollama.sh'
+            : 'scripts/setup_opencode.sh';
+        if (existsSync(join(paths.dir, script))) {
+          const env: Record<string, string> = {};
+          if (config.localLLM?.baseUrl) env.LOCAL_API_URL = config.localLLM.baseUrl;
+          if (config.localLLM?.model) env.LOCAL_MODEL = config.localLLM.model;
+          const rc = await runStepSoft(paths, state, 'opencode-setup', 'bash', [script], paths.dir, env);
+          if (rc !== 0) {
+            note(paths, '⚠ setup opencode thất bại — LM Studio/Ollama có đang chạy không? (Start Server rồi Chạy lại)');
+          }
+        }
       }
       const foundation = req.buildMode !== 'full';
       const flags = [

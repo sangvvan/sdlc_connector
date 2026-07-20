@@ -31,10 +31,41 @@ That's it. The other two repos need no manual cloning:
   is a git URL — cloned fresh per project by the factory.
 
 Prerequisites on the machine (tools, not repos): Node.js 20+, git,
-Docker running (local deploys), Claude/Codex CLI logged in (build
-stage), `gh` logged in (GitHub repo creation), and Ollama or a cloud
-provider configured in System B's `configs/ai-provider.yaml` (real AI
-test generation — without it System B falls back to smoke tests).
+Docker running (local deploys), Claude/Codex CLI logged in (cloud build
+providers), `gh` logged in (GitHub repo creation), and LM Studio/Ollama
+or a cloud provider for System B's AI test generation (without one it
+falls back to smoke tests).
+
+> **Cài Node 20 trên Ubuntu**: ĐỪNG dùng `apt install npm` (gói distro
+> cổ và vỡ dependency). Dùng nvm:
+> ```bash
+> curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+> source ~/.bashrc && nvm install 20
+> ```
+> (hoặc NodeSource: `curl -fsSL https://deb.nodesource.com/setup_20.x |
+> sudo -E bash - && sudo apt install -y nodejs` — gói này có npm sẵn.)
+
+### LM Studio (chạy AI không tốn token cloud)
+
+Một block config duy nhất phục vụ cả hai hệ thống:
+
+```yaml
+localLLM:
+  baseUrl: http://127.0.0.1:1234/v1
+  model: gemma-4-26b-a4b-it-mlx
+```
+
+- **System A phases** (provider `opencode`): khi tạo project, connector
+  tự chạy `scripts/setup_opencode.sh` của project với đúng
+  baseUrl/model trên — không phải setup tay từng project. Provider
+  `opencode-ollama` dùng `setup_opencode_ollama.sh` nếu có.
+- **System B (AI test)**: `configs/ai-provider.yaml` trong
+  ai-automation-framework đã đặt `defaultProvider: lmstudio` với cùng
+  model.
+
+Trên LM Studio: load model → bật **Start Server** (port 1234) →
+Context Length ≥ 8k. LM Studio tắt = job báo warning rõ ràng (không
+treo, không fail ngầm).
 
 For projects built from the System A template, roles and auth recipes
 are discovered automatically (see below). For other projects: auth

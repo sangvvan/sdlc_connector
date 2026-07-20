@@ -35,6 +35,14 @@ const configSchema = z.object({
   generation: z.record(z.unknown()).default({}),
   run: z.record(z.unknown()).default({}),
   summaryDir: z.string().default('runs'),
+  // Local LLM (LM Studio / Ollama) cho provider opencode*: connector tự
+  // chạy scripts/setup_opencode.sh của project với các giá trị này.
+  localLLM: z
+    .object({
+      baseUrl: z.string().default('http://127.0.0.1:1234/v1'),
+      model: z.string().optional(),
+    })
+    .optional(),
   // `connect web` — localhost project-factory UI.
   web: z
     .object({

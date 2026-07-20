@@ -61,6 +61,14 @@ run:
 # relative to the connector repo root.
 summaryDir: runs
 
+# ── Local LLM (LM Studio / Ollama) cho provider opencode* ───────────────
+# Khi tạo project với provider opencode/opencode-ollama, connector tự
+# chạy scripts/setup_opencode.sh của project với các giá trị này để pin
+# đúng endpoint + model (không cần setup tay từng project).
+localLLM:
+  baseUrl: http://127.0.0.1:1234/v1
+  model: gemma-4-26b-a4b-it-mlx
+
 # ── connect web: Project Factory UI (localhost) ─────────────────────────
 # `connect web` mở form tại http://127.0.0.1:{port}: nhập requirement,
 # chọn AI provider + deploy target → clone template, sinh config, chạy
